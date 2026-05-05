@@ -135,10 +135,6 @@ void MapServerNode::publish_keepout_mask()
       accumulate_polygon(obs);
     }
   }
-  for (const auto& obs : obstacle_polygons_)
-  {
-    accumulate_polygon(obs);
-  }
   if (has_dock_exclusion_)
   {
     accumulate_polygon(dock_body_polygon_);
@@ -252,11 +248,11 @@ void MapServerNode::publish_keepout_mask()
     }
   }
 
-  // Overlay obstacle polygons: cells inside any obstacle -> 100 (lethal).
-  // Two sources share this pass: obstacle_polygons_ (dynamic LiDAR-promoted)
-  // and every area's DRAWN entry.obstacles (whose interiors are also lethal
-  // via the classification NO_GO_ZONE overlay below — the polygon pass here
-  // is what carries the margin band). obstacle_margin_m_
+  // Overlay persisted area obstacles: cells inside any obstacle become lethal.
+  // Tracker output deliberately stays out of this static mask; Nav2's obstacle
+  // layer handles it in real time without changing coverage geometry or resume
+  // fingerprints. The polygon pass here preserves the configured margin around
+  // user-drawn and user-promoted obstacles. obstacle_margin_m_
   // (mowgli_robot.yaml.obstacle_margin) additionally marks cells within that
   // distance OUTSIDE each polygon — the transit-side twin of
   // coverage_server's F2C hole buffering, so both planners keep the same
@@ -289,14 +285,6 @@ void MapServerNode::publish_keepout_mask()
       pt.z = 0.0F;
 
       bool lethal = false;
-      for (const auto& obs : obstacle_polygons_)
-      {
-        if (cell_hits_obstacle(pt, obs))
-        {
-          lethal = true;
-          break;
-        }
-      }
       for (std::size_t a = 0; !lethal && a < areas_.size(); ++a)
       {
         for (const auto& obs : areas_[a].obstacles)
@@ -316,7 +304,6 @@ void MapServerNode::publish_keepout_mask()
       }
     }
   }
-
   // Overlay no-go zones from classification layer.
   const auto& cls = map_[std::string(layers::CLASSIFICATION)];
   const float no_go_val = static_cast<float>(CellType::NO_GO_ZONE);
@@ -336,7 +323,7 @@ void MapServerNode::publish_keepout_mask()
   // Dock corridor carve-out: force every cell inside the corridor polygon
   // back to free (0), no matter what the previous passes set. Smac needs
   // a non-lethal lane through the corridor for post-undock transit, so
-  // this carve overrides obstacle_polygons_, the inner-margin buffer, and
+  // this carve overrides persisted obstacle margins, the inner-margin buffer, and
   // any classification-layer no-go that happens to overlap. The dock body
   // itself is NOT carved — it stays lethal via OBSTACLE_PERMANENT.
   if (has_dock_exclusion_ && dock_corridor_polygon_.points.size() >= 3)

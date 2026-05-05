@@ -538,29 +538,21 @@ void MapServerNode::on_get_mowing_area(
     const auto& entry = areas_[idx];
     res->area.name = entry.name;
     res->area.area = entry.polygon;
-    // Start with user-defined (static) obstacles from config.
+    // Coverage geometry is stable for a persisted map: only obstacles owned
+    // by this area enter F2C. Tracker output is handled in real time by Nav2's
+    // obstacle layer and must not invalidate a coverage resume cursor. A
+    // user-promoted obstacle is copied into the owning area's obstacle list,
+    // so it remains part of future coverage plans without consulting the
+    // process-wide obstacle cache.
     res->area.obstacles = entry.obstacles;
     res->area.is_navigation_area = entry.is_navigation_area;
 
-    // Also include persistent tracked obstacles from the obstacle tracker
-    // so the coverage planner can avoid them in the initial plan.
-    const auto n_static = res->area.obstacles.size();
-    for (const auto& obs_poly : obstacle_polygons_)
-    {
-      if (obs_poly.points.size() >= 3)
-      {
-        res->area.obstacles.push_back(obs_poly);
-      }
-    }
-
     res->success = true;
     RCLCPP_INFO(get_logger(),
-                "GetMowingArea[%u]: area='%s', %zu obstacles (%zu static + %zu tracked)",
+                "GetMowingArea[%u]: area='%s', %zu persisted obstacles",
                 req->index,
                 entry.name.c_str(),
-                res->area.obstacles.size(),
-                n_static,
-                res->area.obstacles.size() - n_static);
+                res->area.obstacles.size());
   }
   else
   {
