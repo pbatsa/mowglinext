@@ -395,6 +395,32 @@ TEST_F(AreaTypeTest, PromoteObstacleIsIdempotent)
   EXPECT_EQ(node_->area_obstacle_count_for_test(0), 2u);
 }
 
+TEST_F(AreaTypeTest, CoverageReturnsOnlyObstaclesOwnedByRequestedArea)
+{
+  ASSERT_TRUE(add_area("first_lawn", make_rect(-4, -2, -1, 2), /*is_navigation=*/false));
+  ASSERT_TRUE(add_area("second_lawn", make_rect(1, -2, 4, 2), /*is_navigation=*/false));
+
+  const auto obstacle = make_rect(-3.0, -0.5, -2.5, 0.5);
+  ASSERT_TRUE(node_->apply_promoted_obstacle_for_test(0, obstacle));
+  ASSERT_EQ(node_->obstacle_polygon_count_for_test(), 1u);
+
+  auto first_req = std::make_shared<mowgli_interfaces::srv::GetMowingArea::Request>();
+  first_req->index = 0;
+  auto first_res = std::make_shared<mowgli_interfaces::srv::GetMowingArea::Response>();
+  node_->get_mowing_area_for_test(first_req, first_res);
+  ASSERT_TRUE(first_res->success);
+  EXPECT_EQ(first_res->area.obstacles.size(), 1u)
+      << "an area-owned obstacle must enter its coverage plan exactly once";
+
+  auto second_req = std::make_shared<mowgli_interfaces::srv::GetMowingArea::Request>();
+  second_req->index = 1;
+  auto second_res = std::make_shared<mowgli_interfaces::srv::GetMowingArea::Response>();
+  node_->get_mowing_area_for_test(second_req, second_res);
+  ASSERT_TRUE(second_res->success);
+  EXPECT_TRUE(second_res->area.obstacles.empty())
+      << "the process-wide obstacle cache must not reshape another area's coverage plan";
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Wheel-slip dig reports → PENDING keepout (proposal, not persistence).
 //

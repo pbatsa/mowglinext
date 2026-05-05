@@ -576,12 +576,11 @@ void MapServerNode::on_get_mowing_area(
     res->area.area = entry.polygon;
     res->area.is_navigation_area = entry.is_navigation_area;
 
-    // Start with the area's own obstacles. `obstacle_info` is index-aligned
-    // with `obstacles` (MapObstacleInfo.msg) and carries the name/provenance
-    // that tells a dig proposal apart from a keepout the operator drew.
-    // PENDING proposals are included: they are live keepouts for this
-    // session, so the coverage planner must route around them exactly like
-    // accepted ones — only persistence waits for the operator.
+    // Coverage geometry is scoped to the requested area. `obstacle_info` is
+    // index-aligned with `obstacles` and preserves the newer identity and
+    // pending-proposal metadata. Tracker output belonging to other areas stays
+    // out of this response; Nav2's obstacle layer handles transient detections
+    // in real time without invalidating this area's coverage resume cursor.
     for (const auto& obs : entry.obstacles)
     {
       res->area.obstacles.push_back(obs.polygon);
@@ -592,35 +591,12 @@ void MapServerNode::on_get_mowing_area(
       info.id = obs.id;
       res->area.obstacle_info.push_back(info);
     }
-
-    // Also include persistent tracked obstacles from the obstacle tracker
-    // so the coverage planner can avoid them in the initial plan. Skip the
-    // ones already listed above: apply_promoted_obstacle writes a promoted
-    // keepout into BOTH stores, so without this the same hole was handed to
-    // F2C twice — and with obstacle_info it would also arrive a second time
-    // wearing the wrong identity (a pending dig looking like an accepted
-    // tracker obstacle).
-    const auto n_static = res->area.obstacles.size();
-    for (const auto& obs_poly : obstacle_polygons_)
-    {
-      if (obs_poly.points.size() >= 3 &&
-          !has_duplicate_obstacle(res->area.obstacles, obs_poly, kObstacleDedupEpsilonM))
-      {
-        res->area.obstacles.push_back(obs_poly);
-        mowgli_interfaces::msg::MapObstacleInfo info;
-        info.source = mowgli_interfaces::msg::MapObstacleInfo::SOURCE_TRACKER;
-        res->area.obstacle_info.push_back(info);
-      }
-    }
-
     res->success = true;
     RCLCPP_INFO(get_logger(),
-                "GetMowingArea[%u]: area='%s', %zu obstacles (%zu static + %zu tracked)",
+                "GetMowingArea[%u]: area='%s', %zu persisted obstacles",
                 req->index,
                 entry.name.c_str(),
-                res->area.obstacles.size(),
-                n_static,
-                res->area.obstacles.size() - n_static);
+                res->area.obstacles.size());
   }
   else
   {
