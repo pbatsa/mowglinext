@@ -22,6 +22,10 @@ error() { echo -e "${RED}[x]${NC} $*" >&2; }
 step()  { echo -e "\n${CYAN}${BOLD}── $* ──${NC}"; }
 ask()   { echo -en "${BOLD}$1${NC} "; }
 
+lower_ascii() {
+  printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]'
+}
+
 # Prompt with default value. Sets REPLY global.
 prompt() {
   local answer
@@ -37,7 +41,7 @@ confirm() {
   echo -en "${BOLD}$1 [Y/n]:${NC} " >/dev/tty
   read -r answer </dev/tty
   echo >/dev/tty
-  [[ "${answer,,}" != "n" ]]
+  [[ "$(lower_ascii "$answer")" != "n" ]]
 }
 
 command_exists() {

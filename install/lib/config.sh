@@ -63,7 +63,7 @@ sanitize_image_tag() {
 
   raw="${raw#refs/heads/}"
   raw="${raw#origin/}"
-  raw="${raw,,}"
+  raw="$(lower_ascii "$raw")"
   raw="$(printf '%s' "$raw" | sed -E 's/[^a-z0-9_.-]+/-/g; s/^[.-]+//; s/[.-]+$//; s/-+/-/g')"
   raw="${raw:0:128}"
   raw="$(printf '%s' "$raw" | sed -E 's/^[.-]+//; s/[.-]+$//')"
@@ -448,8 +448,11 @@ warn_legacy_nmea_backend_once() {
 
 normalize_gnss_backend() {
   local backend="${1:-}"
+  local backend_lc
 
-  case "${backend,,}" in
+  backend_lc="$(lower_ascii "$backend")"
+
+  case "$backend_lc" in
     ""|universal|gps|ublox|unicore)
       printf 'universal\n'
       ;;
@@ -464,15 +467,18 @@ normalize_gnss_backend() {
       printf 'disabled\n'
       ;;
     *)
-      printf '%s\n' "${backend,,}"
+      printf '%s\n' "$backend_lc"
       ;;
   esac
 }
 
 normalize_gnss_status_source() {
   local status_source="${1:-}"
+  local status_source_lc
 
-  case "${status_source,,}" in
+  status_source_lc="$(lower_ascii "$status_source")"
+
+  case "$status_source_lc" in
     universal)
       printf 'universal\n'
       ;;
@@ -483,7 +489,7 @@ normalize_gnss_status_source() {
       printf 'universal\n'
       ;;
     *)
-      printf '%s\n' "${status_source,,}"
+      printf '%s\n' "$status_source_lc"
       ;;
   esac
 }
@@ -506,8 +512,11 @@ default_gnss_stack() {
 
 normalize_gnss_stack() {
   local stack="${1:-}"
+  local stack_lc
 
-  case "${stack,,}" in
+  stack_lc="$(lower_ascii "$stack")"
+
+  case "$stack_lc" in
     "")
       printf '%s\n' "$(default_gnss_stack)"
       ;;
@@ -515,18 +524,21 @@ normalize_gnss_stack() {
       printf 'universal\n'
       ;;
     universal|disabled)
-      printf '%s\n' "${stack,,}"
+      printf '%s\n' "$stack_lc"
       ;;
     *)
-      printf '%s\n' "${stack,,}"
+      printf '%s\n' "$stack_lc"
       ;;
   esac
 }
 
 normalize_gnss_receiver_family() {
   local receiver_family="${1:-}"
+  local receiver_family_lc
 
-  case "${receiver_family,,}" in
+  receiver_family_lc="$(lower_ascii "$receiver_family")"
+
+  case "$receiver_family_lc" in
     ""|auto)
       printf 'auto\n'
       ;;
@@ -534,10 +546,10 @@ normalize_gnss_receiver_family() {
       printf 'ublox\n'
       ;;
     unicore|nmea)
-      printf '%s\n' "${receiver_family,,}"
+      printf '%s\n' "$receiver_family_lc"
       ;;
     *)
-      printf '%s\n' "${receiver_family,,}"
+      printf '%s\n' "$receiver_family_lc"
       ;;
   esac
 }
@@ -560,7 +572,7 @@ gnss_connection_from_serial_device() {
   fi
 
   if [[ -n "$hinted_connection" ]]; then
-    printf '%s\n' "${hinted_connection,,}"
+    printf '%s\n' "$(lower_ascii "$hinted_connection")"
     return 0
   fi
 
@@ -578,8 +590,11 @@ list_supported_gnss_backends() {
 
 is_supported_gnss_backend() {
   local backend="${1:-}"
+  local backend_lc
 
-  case "${backend,,}" in
+  backend_lc="$(lower_ascii "$backend")"
+
+  case "$backend_lc" in
     universal)
       return 0
       ;;
@@ -647,7 +662,7 @@ gnss_receiver_family_from_state() {
   local receiver_family="${GNSS_RECEIVER_FAMILY:-}"
 
   if [[ -n "$receiver_family" ]]; then
-    printf '%s\n' "${receiver_family,,}"
+    printf '%s\n' "$(lower_ascii "$receiver_family")"
     return 0
   fi
 
@@ -656,7 +671,7 @@ gnss_receiver_family_from_state() {
 
 gnss_transport_from_state() {
   local transport="${GNSS_TRANSPORT:-serial}"
-  printf '%s\n' "${transport,,}"
+  printf '%s\n' "$(lower_ascii "$transport")"
 }
 
 gnss_serial_device_from_state() {

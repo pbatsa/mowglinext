@@ -40,6 +40,8 @@ section ".env contains all required keys"
 # Keys env.sh::setup_env() unconditionally writes — see install/lib/env.sh
 REQUIRED_KEYS=(
   ROS_DOMAIN_ID
+  ROS_AUTOMATIC_DISCOVERY_RANGE
+  MOWGLI_SYSTEM_ROLE
   MOWER_IP
   DISABLE_BLUETOOTH
   ENABLE_FOXGLOVE

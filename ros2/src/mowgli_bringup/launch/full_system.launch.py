@@ -30,6 +30,10 @@ Brings up all subsystems:
   8. Diagnostics             — mowgli_monitoring
   9. MQTT bridge (optional)  — mowgli_monitoring
   10. foxglove_bridge        — WebSocket bridge for GUI and Foxglove Studio
+
+The system_role launch argument can select the same complete stack (all),
+or just the onboard hardware/localization half (onboard), or the remote
+navigation/behavior/visualization half (remote).
 """
 
 import os
@@ -43,7 +47,7 @@ from launch.actions import (
 )
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 
@@ -148,6 +152,13 @@ def generate_launch_description() -> LaunchDescription:
         description="Enable persistent obstacle tracking from /scan into the mow_progress map. Promotes static clusters to OBSTACLE_PERMANENT after 60 s, triggers replanning around them. Set to false if the tracker is misbehaving on grass-heavy terrain.",
     )
 
+    system_role_arg = DeclareLaunchArgument(
+        "system_role",
+        default_value="all",
+        choices=["all", "onboard", "remote"],
+        description="Which part of the stack to launch: all, onboard, or remote. all preserves the single-computer deployment.",
+    )
+
     # use_fusion_graph and use_magnetometer are NOT declared here —
     # navigation.launch.py reads them from mowgli_robot.yaml directly
     # so the operator flips them via the runtime config (and a
@@ -165,6 +176,47 @@ def generate_launch_description() -> LaunchDescription:
     enable_foxglove = LaunchConfiguration("enable_foxglove")
     foxglove_port = LaunchConfiguration("foxglove_port")
     use_lidar = LaunchConfiguration("use_lidar")
+    system_role = LaunchConfiguration("system_role")
+
+    onboard_role = PythonExpression(
+        ["'", system_role, "'.lower() in ('all', 'onboard')"]
+    )
+    onboard_only_role = PythonExpression(
+        ["'", system_role, "'.lower() == 'onboard'"]
+    )
+    remote_role = PythonExpression(
+        ["'", system_role, "'.lower() in ('all', 'remote')"]
+    )
+    all_role = PythonExpression(
+        ["'", system_role, "'.lower() == 'all'"]
+    )
+    mqtt_role = PythonExpression(
+        [
+            "'",
+            system_role,
+            "'.lower() in ('all', 'remote') and '",
+            enable_mqtt,
+            "'.lower() in ('true', '1', 'yes')",
+        ]
+    )
+    foxglove_role = PythonExpression(
+        [
+            "'",
+            system_role,
+            "'.lower() in ('all', 'remote') and '",
+            enable_foxglove,
+            "'.lower() in ('true', '1', 'yes')",
+        ]
+    )
+    obstacle_tracker_role = PythonExpression(
+        [
+            "'",
+            system_role,
+            "'.lower() in ('all', 'remote') and '",
+            LaunchConfiguration("use_obstacle_tracker"),
+            "'.lower() in ('true', '1', 'yes')",
+        ]
+    )
 
     # ------------------------------------------------------------------
     # Config paths
@@ -190,6 +242,7 @@ def generate_launch_description() -> LaunchDescription:
         PythonLaunchDescriptionSource(
             os.path.join(bringup_dir, "launch", "mowgli.launch.py")
         ),
+        condition=IfCondition(onboard_role),
         launch_arguments={
             "use_sim_time": use_sim_time,
             "serial_port": serial_port,
@@ -207,6 +260,10 @@ def generate_launch_description() -> LaunchDescription:
         launch_arguments={
             "use_sim_time": use_sim_time,
             "use_lidar": use_lidar,
+            "launch_localization": onboard_role,
+            "launch_nav2": remote_role,
+            "launch_nav2_collision_monitor": all_role,
+            "launch_onboard_collision_monitor": onboard_only_role,
         }.items(),
     )
 
@@ -214,6 +271,7 @@ def generate_launch_description() -> LaunchDescription:
     # 3. Behavior tree node
     # ------------------------------------------------------------------
     behavior_tree_node = Node(
+        condition=IfCondition(remote_role),
         package="mowgli_behavior",
         executable="behavior_tree_node",
         name="behavior_tree_node",
@@ -270,6 +328,7 @@ def generate_launch_description() -> LaunchDescription:
     # 4. Map server
     # ------------------------------------------------------------------
     map_server_node = Node(
+        condition=IfCondition(remote_role),
         package="mowgli_map",
         executable="map_server_node",
         name="map_server_node",
@@ -344,6 +403,7 @@ def generate_launch_description() -> LaunchDescription:
     datum_lat = float(robot_params.get("datum_lat", 0.000000000))
     datum_lon = float(robot_params.get("datum_lon", 0.000000000))
     navsat_converter_node = Node(
+        condition=IfCondition(onboard_role),
         package="mowgli_localization",
         executable="navsat_to_absolute_pose_node",
         name="navsat_to_absolute_pose",
@@ -361,6 +421,7 @@ def generate_launch_description() -> LaunchDescription:
     # 7. Localization monitor
     # ------------------------------------------------------------------
     localization_monitor_node = Node(
+        condition=IfCondition(onboard_role),
         package="mowgli_localization",
         executable="localization_monitor_node",
         name="localization_monitor_node",
@@ -375,6 +436,7 @@ def generate_launch_description() -> LaunchDescription:
     # Exposes /calibrate_imu_yaw_node/calibrate — idle until called.
     # ------------------------------------------------------------------
     calibrate_imu_yaw_node = Node(
+        condition=IfCondition(onboard_role),
         package="mowgli_localization",
         executable="calibrate_imu_yaw_node",
         name="calibrate_imu_yaw_node",
@@ -390,6 +452,7 @@ def generate_launch_description() -> LaunchDescription:
     # 8. Diagnostics
     # ------------------------------------------------------------------
     diagnostics_node = Node(
+        condition=IfCondition(remote_role),
         package="mowgli_monitoring",
         executable="diagnostics_node",
         name="diagnostics_node",
@@ -409,7 +472,7 @@ def generate_launch_description() -> LaunchDescription:
     # 9. MQTT bridge (optional)
     # ------------------------------------------------------------------
     mqtt_bridge_node = Node(
-        condition=IfCondition(enable_mqtt),
+        condition=IfCondition(mqtt_role),
         package="mowgli_monitoring",
         executable="mqtt_bridge_node",
         name="mqtt_bridge_node",
@@ -427,7 +490,7 @@ def generate_launch_description() -> LaunchDescription:
     # transport/status topics out of Foxglove so they do not leak into the
     # GUI contract or trigger schema-resolution noise.
     foxglove_bridge_node = Node(
-        condition=IfCondition(enable_foxglove),
+        condition=IfCondition(foxglove_role),
         package="foxglove_bridge",
         executable="foxglove_bridge",
         name="foxglove_bridge",
@@ -468,6 +531,7 @@ def generate_launch_description() -> LaunchDescription:
     # with subscription data. The Go GUI's PublisherRoute connects here
     # instead of going through foxglove_bridge for manual mowing.
     cmd_vel_relay_node = Node(
+        condition=IfCondition(onboard_role),
         package="mowgli_bringup",
         executable="cmd_vel_ws_relay.py",
         name="cmd_vel_ws_relay",
@@ -502,7 +566,7 @@ def generate_launch_description() -> LaunchDescription:
     # adaptation to real new obstacles). Toggle off via the
     # use_obstacle_tracker launch arg if it misbehaves on real grass.
     obstacle_tracker_node = Node(
-        condition=IfCondition(LaunchConfiguration("use_obstacle_tracker")),
+        condition=IfCondition(obstacle_tracker_role),
         package="mowgli_map",
         executable="obstacle_tracker_node",
         name="obstacle_tracker",
@@ -526,6 +590,7 @@ def generate_launch_description() -> LaunchDescription:
             foxglove_port_arg,
             use_lidar_arg,
             use_obstacle_tracker_arg,
+            system_role_arg,
             # Subsystem includes
             mowgli_launch,
             navigation_launch,

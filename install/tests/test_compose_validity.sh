@@ -146,6 +146,20 @@ if real_docker_compose_available; then
     fail "ENABLE_FOXGLOVE env var wired into mowgli service" "not found in expanded compose"
   fi
 
+  if printf '%s' "$EXPANDED" | grep -qE 'MOWGLI_SYSTEM_ROLE: all$'; then
+    pass "MOWGLI_SYSTEM_ROLE defaults to all"
+  else
+    fail "MOWGLI_SYSTEM_ROLE defaults to all" \
+      "$(printf '%s' "$EXPANDED" | grep -n 'MOWGLI_SYSTEM_ROLE:' | head -1)"
+  fi
+
+  if printf '%s' "$EXPANDED" | grep -qE 'ROS_AUTOMATIC_DISCOVERY_RANGE: LOCALHOST$'; then
+    pass "ROS_AUTOMATIC_DISCOVERY_RANGE defaults to LOCALHOST"
+  else
+    fail "ROS_AUTOMATIC_DISCOVERY_RANGE defaults to LOCALHOST" \
+      "$(printf '%s' "$EXPANDED" | grep -n 'ROS_AUTOMATIC_DISCOVERY_RANGE:' | head -1)"
+  fi
+
   section "Compose 'volumes:' section declares mowgli_maps"
 
   # mowgli_maps is the bind-mount that persists garden_map + fusion_graph
@@ -166,6 +180,16 @@ else
     pass "ENABLE_FOXGLOVE env var wired into mowgli service"
   else
     fail "ENABLE_FOXGLOVE env var wired into mowgli service" "not found in fallback compose"
+  fi
+  if grep -q 'MOWGLI_SYSTEM_ROLE' "$COMPOSE_FILE"; then
+    pass "MOWGLI_SYSTEM_ROLE env var wired into mowgli service"
+  else
+    fail "MOWGLI_SYSTEM_ROLE env var wired into mowgli service" "not found in fallback compose"
+  fi
+  if grep -q 'ROS_AUTOMATIC_DISCOVERY_RANGE' "$COMPOSE_FILE"; then
+    pass "ROS_AUTOMATIC_DISCOVERY_RANGE env var wired into compose"
+  else
+    fail "ROS_AUTOMATIC_DISCOVERY_RANGE env var wired into compose" "not found in fallback compose"
   fi
 
   section "Compose 'volumes:' section declares mowgli_maps"

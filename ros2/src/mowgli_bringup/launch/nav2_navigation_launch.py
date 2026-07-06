@@ -41,22 +41,30 @@ def generate_launch_description():
     autostart = LaunchConfiguration('autostart')
     params_file = LaunchConfiguration('params_file')
     use_composition = LaunchConfiguration('use_composition')
+    launch_collision_monitor = LaunchConfiguration('launch_collision_monitor')
     container_name = LaunchConfiguration('container_name')
     container_name_full = (namespace, '/', container_name)
     use_respawn = LaunchConfiguration('use_respawn')
     log_level = LaunchConfiguration('log_level')
+    collision_monitor_enabled = PythonExpression(
+        ["'", launch_collision_monitor, "'.lower() in ('true', '1', 'yes')"]
+    )
+    collision_monitor_disabled = PythonExpression(
+        ["'", launch_collision_monitor, "'.lower() not in ('true', '1', 'yes')"]
+    )
 
-    lifecycle_nodes = [
+    lifecycle_nodes_without_collision_monitor = [
         'controller_server',
         'smoother_server',     # Nav2 path smoother (planning), not velocity!
         'planner_server',
         'behavior_server',
-        'collision_monitor',
         'bt_navigator',
         'waypoint_follower',
         'docking_server',
         'coverage_server',     # opennav_coverage / Fields2Cover (F2C path planner)
     ]
+    lifecycle_nodes = lifecycle_nodes_without_collision_monitor.copy()
+    lifecycle_nodes.insert(4, 'collision_monitor')
 
     remappings = [('/tf', 'tf'), ('/tf_static', 'tf_static')]
 
@@ -106,6 +114,12 @@ def generate_launch_description():
         'use_composition',
         default_value='False',
         description='Use composed bringup if True',
+    )
+
+    declare_launch_collision_monitor_cmd = DeclareLaunchArgument(
+        'launch_collision_monitor',
+        default_value='True',
+        description='Launch collision_monitor as part of this Nav2 lifecycle group',
     )
 
     declare_container_name_cmd = DeclareLaunchArgument(
@@ -208,6 +222,7 @@ def generate_launch_description():
                 package='nav2_collision_monitor',
                 executable='collision_monitor',
                 name='collision_monitor',
+                condition=IfCondition(collision_monitor_enabled),
                 output='screen',
                 respawn=use_respawn,
                 respawn_delay=2.0,
@@ -250,15 +265,35 @@ def generate_launch_description():
                 package='nav2_lifecycle_manager',
                 executable='lifecycle_manager',
                 name='lifecycle_manager_navigation',
+                condition=IfCondition(collision_monitor_enabled),
                 output='screen',
                 arguments=['--ros-args', '--log-level', log_level],
                 parameters=[{'autostart': autostart}, {'node_names': lifecycle_nodes}],
+            ),
+            Node(
+                package='nav2_lifecycle_manager',
+                executable='lifecycle_manager',
+                name='lifecycle_manager_navigation',
+                condition=IfCondition(collision_monitor_disabled),
+                output='screen',
+                arguments=['--ros-args', '--log-level', log_level],
+                parameters=[
+                    {'autostart': autostart},
+                    {'node_names': lifecycle_nodes_without_collision_monitor},
+                ],
             ),
         ],
     )
 
     load_composable_nodes = GroupAction(
-        condition=IfCondition(use_composition),
+        condition=IfCondition(
+            PythonExpression([
+                use_composition,
+                " and '",
+                launch_collision_monitor,
+                "'.lower() in ('true', '1', 'yes')",
+            ])
+        ),
         actions=[
             SetParameter('use_sim_time', use_sim_time),
             LoadComposableNodes(
@@ -336,6 +371,86 @@ def generate_launch_description():
         ],
     )
 
+    load_composable_nodes_without_collision_monitor = GroupAction(
+        condition=IfCondition(
+            PythonExpression([
+                use_composition,
+                " and '",
+                launch_collision_monitor,
+                "'.lower() not in ('true', '1', 'yes')",
+            ])
+        ),
+        actions=[
+            SetParameter('use_sim_time', use_sim_time),
+            LoadComposableNodes(
+                target_container=container_name_full,
+                composable_node_descriptions=[
+                    ComposableNode(
+                        package='nav2_controller',
+                        plugin='nav2_controller::ControllerServer',
+                        name='controller_server',
+                        parameters=[configured_params],
+                        remappings=remappings + [('cmd_vel', 'cmd_vel_nav')],
+                    ),
+                    ComposableNode(
+                        package='nav2_smoother',
+                        plugin='nav2_smoother::SmootherServer',
+                        name='smoother_server',
+                        parameters=[configured_params],
+                        remappings=remappings,
+                    ),
+                    ComposableNode(
+                        package='nav2_planner',
+                        plugin='nav2_planner::PlannerServer',
+                        name='planner_server',
+                        parameters=[configured_params],
+                        remappings=remappings,
+                    ),
+                    ComposableNode(
+                        package='nav2_behaviors',
+                        plugin='behavior_server::BehaviorServer',
+                        name='behavior_server',
+                        parameters=[configured_params],
+                        remappings=remappings + [('cmd_vel', 'cmd_vel_nav')],
+                    ),
+                    ComposableNode(
+                        package='nav2_bt_navigator',
+                        plugin='nav2_bt_navigator::BtNavigator',
+                        name='bt_navigator',
+                        parameters=[configured_params],
+                        remappings=remappings,
+                    ),
+                    ComposableNode(
+                        package='nav2_waypoint_follower',
+                        plugin='nav2_waypoint_follower::WaypointFollower',
+                        name='waypoint_follower',
+                        parameters=[configured_params],
+                        remappings=remappings,
+                    ),
+                    ComposableNode(
+                        package='opennav_docking',
+                        plugin='opennav_docking::DockingServer',
+                        name='docking_server',
+                        parameters=[configured_params],
+                        remappings=remappings
+                        + [('cmd_vel', 'cmd_vel_docking')],
+                    ),
+                    ComposableNode(
+                        package='nav2_lifecycle_manager',
+                        plugin='nav2_lifecycle_manager::LifecycleManager',
+                        name='lifecycle_manager_navigation',
+                        parameters=[
+                            {
+                                'autostart': autostart,
+                                'node_names': lifecycle_nodes_without_collision_monitor,
+                            }
+                        ],
+                    ),
+                ],
+            ),
+        ],
+    )
+
     # Create the launch description and populate
     ld = LaunchDescription()
 
@@ -348,11 +463,13 @@ def generate_launch_description():
     ld.add_action(declare_params_file_cmd)
     ld.add_action(declare_autostart_cmd)
     ld.add_action(declare_use_composition_cmd)
+    ld.add_action(declare_launch_collision_monitor_cmd)
     ld.add_action(declare_container_name_cmd)
     ld.add_action(declare_use_respawn_cmd)
     ld.add_action(declare_log_level_cmd)
     # Add the actions to launch all of the navigation nodes
     ld.add_action(load_nodes)
     ld.add_action(load_composable_nodes)
+    ld.add_action(load_composable_nodes_without_collision_monitor)
 
     return ld

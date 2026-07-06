@@ -58,7 +58,7 @@ from launch.actions import (
     IncludeLaunchDescription,
     RegisterEventHandler,
 )
-from launch.conditions import IfCondition, UnlessCondition
+from launch.conditions import IfCondition
 from launch.event_handlers import OnProcessExit
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PythonExpression
@@ -164,6 +164,30 @@ def generate_launch_description() -> LaunchDescription:
         description="When false, use nav2_params_no_lidar.yaml (no obstacle layer, collision monitor pass-through). Default read from mowgli_robot.yaml.lidar_enabled; CLI/compose override wins.",
     )
 
+    launch_localization_arg = DeclareLaunchArgument(
+        "launch_localization",
+        default_value="true",
+        description="Launch localization nodes (fusion_graph and helpers). Set false for a remote Nav2-only role.",
+    )
+
+    launch_nav2_arg = DeclareLaunchArgument(
+        "launch_nav2",
+        default_value="true",
+        description="Launch Nav2 lifecycle-managed navigation nodes. Set false for an onboard localization-only role.",
+    )
+
+    launch_nav2_collision_monitor_arg = DeclareLaunchArgument(
+        "launch_nav2_collision_monitor",
+        default_value="true",
+        description="Keep collision_monitor inside the Nav2 lifecycle group. Set false when an onboard role owns collision monitoring.",
+    )
+
+    launch_onboard_collision_monitor_arg = DeclareLaunchArgument(
+        "launch_onboard_collision_monitor",
+        default_value="false",
+        description="Launch collision_monitor with a small onboard lifecycle manager, without the rest of Nav2.",
+    )
+
     use_magnetometer_arg = DeclareLaunchArgument(
         "use_magnetometer",
         default_value=_early_use_magnetometer,
@@ -222,12 +246,26 @@ def generate_launch_description() -> LaunchDescription:
     # ------------------------------------------------------------------
     use_sim_time = LaunchConfiguration("use_sim_time")
     use_lidar = LaunchConfiguration("use_lidar")
+    launch_localization = LaunchConfiguration("launch_localization")
+    launch_nav2 = LaunchConfiguration("launch_nav2")
+    launch_nav2_collision_monitor = LaunchConfiguration("launch_nav2_collision_monitor")
+    launch_onboard_collision_monitor = LaunchConfiguration("launch_onboard_collision_monitor")
     use_magnetometer = LaunchConfiguration("use_magnetometer")
     use_scan_matching = LaunchConfiguration("use_scan_matching")
     use_loop_closure = LaunchConfiguration("use_loop_closure")
     use_gps_dock_detection = LaunchConfiguration("use_gps_dock_detection")
     fusion_graph_tf_lead_s = LaunchConfiguration("fusion_graph_tf_lead_s")
     fusion_graph_node_period_s = LaunchConfiguration("fusion_graph_node_period_s")
+
+    launch_nav2_no_lidar = PythonExpression(
+        [
+            "'",
+            launch_nav2,
+            "'.lower() in ('true', '1', 'yes') and '",
+            use_lidar,
+            "'.lower() not in ('true', '1', 'yes')",
+        ]
+    )
 
     # ------------------------------------------------------------------
     # Config paths — one shared base + thin lidar/no-lidar overlays, deep-
@@ -761,6 +799,7 @@ def generate_launch_description() -> LaunchDescription:
     )
 
     wait_for_map_odom_tf = ExecuteProcess(
+        condition=IfCondition(launch_nav2),
         cmd=[
             "python3", wait_for_tf_script,
             "--parent", "map",
@@ -772,6 +811,7 @@ def generate_launch_description() -> LaunchDescription:
     )
 
     nav2_navigation_group = GroupAction(
+        condition=IfCondition(launch_nav2),
         actions=[
             SetParameter("bond_timeout", 10.0),
             IncludeLaunchDescription(
@@ -784,6 +824,7 @@ def generate_launch_description() -> LaunchDescription:
                     "use_sim_time": use_sim_time,
                     "params_file": nav2_params,
                     "use_composition": "False",
+                    "launch_collision_monitor": launch_nav2_collision_monitor,
                 }.items(),
             ),
         ]
@@ -794,7 +835,8 @@ def generate_launch_description() -> LaunchDescription:
         OnProcessExit(
             target_action=wait_for_map_odom_tf,
             on_exit=[nav2_navigation_group],
-        )
+        ),
+        condition=IfCondition(launch_nav2),
     )
 
     # No-lidar global_costmap needs an always-current static_layer to keep
@@ -806,7 +848,32 @@ def generate_launch_description() -> LaunchDescription:
         executable="empty_static_map_pub.py",
         name="empty_static_map_pub",
         output="screen",
-        condition=UnlessCondition(use_lidar),
+        condition=IfCondition(launch_nav2_no_lidar),
+    )
+
+    onboard_collision_monitor = Node(
+        package="nav2_collision_monitor",
+        executable="collision_monitor",
+        name="collision_monitor",
+        output="screen",
+        condition=IfCondition(launch_onboard_collision_monitor),
+        parameters=[nav2_params],
+        remappings=[
+            ("/tf", "tf"),
+            ("/tf_static", "tf_static"),
+        ],
+    )
+
+    onboard_collision_lifecycle_manager = Node(
+        package="nav2_lifecycle_manager",
+        executable="lifecycle_manager",
+        name="lifecycle_manager_collision_monitor",
+        output="screen",
+        condition=IfCondition(launch_onboard_collision_monitor),
+        parameters=[
+            {"autostart": True},
+            {"node_names": ["collision_monitor"]},
+        ],
     )
 
     # ------------------------------------------------------------------
@@ -817,6 +884,7 @@ def generate_launch_description() -> LaunchDescription:
     # 2026-04-26, but keeping the alias is still cheap insurance for third-
     # party tools that walk the frame tree from gps.
     static_gps_link_alias = Node(
+        condition=IfCondition(launch_localization),
         package="tf2_ros",
         executable="static_transform_publisher",
         name="static_gps_link_to_gps_alias",
@@ -842,6 +910,7 @@ def generate_launch_description() -> LaunchDescription:
                 "launch", "fusion_graph.launch.py",
             )
         ),
+        condition=IfCondition(launch_localization),
         launch_arguments={
             "use_sim_time": use_sim_time,
             "use_magnetometer": use_magnetometer,
@@ -874,6 +943,7 @@ def generate_launch_description() -> LaunchDescription:
     # to 0.0 in sim_full_system.launch.py.
     cog_stationary_rate = LaunchConfiguration("cog_stationary_seed_rate_hz")
     cog_to_imu = Node(
+        condition=IfCondition(launch_localization),
         package="mowgli_localization",
         executable="cog_to_imu",
         name="cog_to_imu",
@@ -918,7 +988,8 @@ def generate_launch_description() -> LaunchDescription:
     mag_cal_present = "true" if os.path.isfile(mag_cal_path) else "false"
     mag_yaw_publisher = Node(
         condition=IfCondition(PythonExpression(
-            ["'", use_magnetometer, "' == 'true' and ",
+            ["'", launch_localization, "'.lower() in ('true', '1', 'yes') and ",
+             "'", use_magnetometer, "' == 'true' and ",
              "'", mag_cal_present, "' == 'true'"])),
         package="mowgli_localization",
         executable="mag_yaw_publisher",
@@ -944,6 +1015,7 @@ def generate_launch_description() -> LaunchDescription:
     # acquired while rotating doesn't appear smeared by ω×scan_period in
     # the map frame. Output /scan_deskewed feeds the rest of the pipeline.
     scan_deskew = Node(
+        condition=IfCondition(launch_localization),
         package="mowgli_localization",
         executable="scan_deskew_node",
         name="scan_deskew",
@@ -959,6 +1031,7 @@ def generate_launch_description() -> LaunchDescription:
     )
 
     costmap_scan_filter = Node(
+        condition=IfCondition(launch_localization),
         package="mowgli_localization",
         executable="costmap_scan_filter_node",
         name="costmap_scan_filter",
@@ -1014,7 +1087,9 @@ def generate_launch_description() -> LaunchDescription:
     # use_gps_dock_detection; when off, the legacy graph-TF approach runs and
     # this node is not launched (and use_external_detection_pose stays false).
     gps_dock_detection = Node(
-        condition=IfCondition(use_gps_dock_detection),
+        condition=IfCondition(PythonExpression(
+            ["'", launch_localization, "'.lower() in ('true', '1', 'yes') and ",
+             "'", use_gps_dock_detection, "'.lower() in ('true', '1', 'yes')"])),
         package="mowgli_localization",
         executable="gps_dock_detection_node",
         name="gps_dock_detection",
@@ -1050,6 +1125,10 @@ def generate_launch_description() -> LaunchDescription:
         [
             use_sim_time_arg,
             use_lidar_arg,
+            launch_localization_arg,
+            launch_nav2_arg,
+            launch_nav2_collision_monitor_arg,
+            launch_onboard_collision_monitor_arg,
             use_magnetometer_arg,
             use_scan_matching_arg,
             use_loop_closure_arg,
@@ -1070,5 +1149,7 @@ def generate_launch_description() -> LaunchDescription:
             wait_for_map_odom_tf,
             nav2_after_tf,
             empty_static_map_pub,
+            onboard_collision_monitor,
+            onboard_collision_lifecycle_manager,
         ]
     )

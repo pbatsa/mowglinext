@@ -156,6 +156,8 @@ Copy `.env.example` to `.env` and edit. All keys and their defaults:
 | Variable | Default | Description |
 |---|---|---|
 | `ROS_DOMAIN_ID` | `0` | DDS domain ID — must be the same across all containers and any remote machines |
+| `ROS_AUTOMATIC_DISCOVERY_RANGE` | `LOCALHOST` | ROS2 discovery scope. Keep `LOCALHOST` for single-computer deployments; use `SUBNET` when intentionally splitting ROS2 nodes across machines. |
+| `MOWGLI_SYSTEM_ROLE` | `all` | Launch role for the main ROS2 service: `all` (current single-computer behavior), `onboard` (hardware/localization), or `remote` (Nav2/behavior/map/visualization). |
 | `MOWER_IP` | `10.0.0.161` | IP of the mower Pi — only used in ser2net mode |
 | `LIDAR_PORT` | `/dev/ttyS1` | Host device path for the LD19 UART |
 | `LIDAR_BAUD` | `230400` | LD19 baud rate |
@@ -169,6 +171,14 @@ For Universal GNSS, set `GNSS_SERIAL_DEVICE=/dev/serial/by-id/...` and keep
 `GPS_PORT` aligned with the same by-id path when you need the legacy
 compatibility keys. Use raw `ttyACM*` or `ttyUSB*` paths only as a temporary
 diagnostic fallback when `/dev/serial/by-id` is unavailable.
+
+### Distributed ROS2 role split
+
+The default `MOWGLI_SYSTEM_ROLE=all` keeps the historical single-computer stack.
+For a split deployment, run the mower computer with `MOWGLI_SYSTEM_ROLE=onboard`
+and the remote computer with `MOWGLI_SYSTEM_ROLE=remote`. Both machines must use
+the same `ROS_DOMAIN_ID` and a discovery range that can cross the LAN, typically
+`ROS_AUTOMATIC_DISCOVERY_RANGE=SUBNET`.
 
 ### `mowgli_robot.yaml` key parameters
 
@@ -366,7 +376,7 @@ The shared config at `config/cyclonedds.xml` is bind-mounted to
 
 ```xml
 <Discovery>
-  <MaxAutoParticipantIndex>120</MaxAutoParticipantIndex>
+  <MaxAutoParticipantIndex>500</MaxAutoParticipantIndex>
 </Discovery>
 ```
 
@@ -375,8 +385,9 @@ participants that the full stack starts simultaneously.
 
 All containers run with `network_mode: host` and `ipc: host` so DDS
 discovery works over the loopback interface without multicast routing.
-`ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST` restricts discovery to the local
-machine, preventing DDS traffic from leaking to the LAN.
+`ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST` remains the default to prevent DDS
+traffic from leaking to the LAN. For a deliberate multi-machine split, set it
+to `SUBNET` on both machines and keep `ROS_DOMAIN_ID` identical.
 
 ### SLAM maps
 

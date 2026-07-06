@@ -4,33 +4,56 @@ upsert_env_key() {
   local file="$1"
   local key="$2"
   local value="$3"
-  local escaped_value="$value"
+  local tmp
 
-  escaped_value="${escaped_value//\\/\\\\}"
-  escaped_value="${escaped_value//&/\\&}"
-  escaped_value="${escaped_value//|/\\|}"
-
-  if grep -q "^${key}=" "$file" 2>/dev/null; then
-    sed -i "s|^${key}=.*|${key}=${escaped_value}|" "$file"
-  else
-    echo "${key}=${value}" >> "$file"
-  fi
+  mkdir -p "$(dirname "$file")"
+  touch "$file"
+  tmp="$(mktemp "${file}.tmp.XXXXXX")" || return 1
+  awk -v key="$key" -v value="$value" '
+    BEGIN { written = 0 }
+    index($0, key "=") == 1 {
+      if (!written) {
+        print key "=" value
+        written = 1
+      }
+      next
+    }
+    { print }
+    END {
+      if (!written) {
+        print key "=" value
+      }
+    }
+  ' "$file" > "$tmp" && mv "$tmp" "$file"
 }
 
 remove_env_key() {
   local file="$1"
   local key="$2"
+  local tmp
 
   [ -f "$file" ] || return 0
-  sed -i "/^${key}=.*/d" "$file"
+  tmp="$(mktemp "${file}.tmp.XXXXXX")" || return 1
+  awk -v key="$key" 'index($0, key "=") != 1 { print }' "$file" > "$tmp" \
+    && mv "$tmp" "$file"
 }
 
 remove_env_keys_with_prefix() {
   local file="$1"
   local prefix="$2"
+  local tmp
 
   [ -f "$file" ] || return 0
-  sed -i "/^${prefix}[A-Z0-9_]*=.*/d" "$file"
+  tmp="$(mktemp "${file}.tmp.XXXXXX")" || return 1
+  awk -v prefix="$prefix" '
+    {
+      suffix = substr($0, length(prefix) + 1)
+      if (index($0, prefix) == 1 && suffix ~ /^[A-Z0-9_]*=/) {
+        next
+      }
+      print
+    }
+  ' "$file" > "$tmp" && mv "$tmp" "$file"
 }
 
 remove_legacy_gnss_env_keys() {
@@ -129,7 +152,7 @@ sync_gnss_env_contract_values() {
   # "centipede/centipede". Only fall back to it when actually pointed at that
   # caster — a custom caster must never receive the Centipede credentials, and a
   # credential the operator deliberately cleared must not be silently restored.
-  if [[ "${GNSS_NTRIP_HOST,,}" == "crtk.net" ]]; then
+  if [[ "$(lower_ascii "$GNSS_NTRIP_HOST")" == "crtk.net" ]]; then
     : "${GNSS_NTRIP_USERNAME:=centipede}"
     : "${GNSS_NTRIP_PASSWORD:=centipede}"
   fi
@@ -166,9 +189,20 @@ setup_env() {
   mkdir -p "$REPO_DIR/docker"
 
   : "${ROS_DOMAIN_ID:=0}"
+  : "${ROS_AUTOMATIC_DISCOVERY_RANGE:=LOCALHOST}"
+  : "${MOWGLI_SYSTEM_ROLE:=all}"
   : "${MOWER_IP:=10.0.0.161}"
   : "${DISABLE_BLUETOOTH:=true}"
   : "${ENABLE_FOXGLOVE:=true}"
+
+  case "$MOWGLI_SYSTEM_ROLE" in
+    all|onboard|remote)
+      ;;
+    *)
+      warn "Invalid MOWGLI_SYSTEM_ROLE=${MOWGLI_SYSTEM_ROLE} — defaulting to all"
+      MOWGLI_SYSTEM_ROLE="all"
+      ;;
+  esac
 
   # Main GNSS receiver.
   # GNSS_* is the only public runtime contract written to docker/.env.
@@ -268,6 +302,8 @@ setup_env() {
   touch "$env_file"
 
   upsert_env_key "$env_file" "ROS_DOMAIN_ID" "$ROS_DOMAIN_ID"
+  upsert_env_key "$env_file" "ROS_AUTOMATIC_DISCOVERY_RANGE" "$ROS_AUTOMATIC_DISCOVERY_RANGE"
+  upsert_env_key "$env_file" "MOWGLI_SYSTEM_ROLE" "$MOWGLI_SYSTEM_ROLE"
   upsert_env_key "$env_file" "MOWER_IP" "$MOWER_IP"
   upsert_env_key "$env_file" "DISABLE_BLUETOOTH" "$DISABLE_BLUETOOTH"
   upsert_env_key "$env_file" "ENABLE_FOXGLOVE" "$ENABLE_FOXGLOVE"
