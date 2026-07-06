@@ -13,6 +13,7 @@
 FROM ros:kilted-ros-base AS gtsam-builder
 
 ARG DEBIAN_FRONTEND=noninteractive
+ARG BUILD_PARALLEL_WORKERS=2
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       build-essential cmake git \
@@ -36,7 +37,7 @@ RUN cd gtsam && mkdir build && cd build && \
         -DGTSAM_WITH_EIGEN_MKL=OFF \
         -DGTSAM_INSTALL_MATLAB_TOOLBOX=OFF \
         -DBUILD_SHARED_LIBS=ON \
- && make -j$(nproc) install
+ && make -j${BUILD_PARALLEL_WORKERS} install
 
 # =============================================================================
 # Stage 0b: fields2cover-builder
@@ -50,6 +51,7 @@ RUN cd gtsam && mkdir build && cd build && \
 FROM ros:kilted-ros-base AS fields2cover-builder
 
 ARG DEBIAN_FRONTEND=noninteractive
+ARG BUILD_PARALLEL_WORKERS=2
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       build-essential cmake git pkg-config \
@@ -72,7 +74,7 @@ RUN . /opt/ros/kilted/setup.sh && \
         -DBUILD_DOC=OFF \
         -DALLOW_PARALLELIZATION=ON \
         -DBUILD_SHARED_LIBS=ON \
- && make -j$(nproc) install
+ && make -j${BUILD_PARALLEL_WORKERS} install
 
 # =============================================================================
 # Stage 0b2: fields2cover-v3-builder  (coverage migration — Phase 1b: live)
@@ -90,6 +92,7 @@ RUN . /opt/ros/kilted/setup.sh && \
 FROM ros:kilted-ros-base AS fields2cover-v3-builder
 
 ARG DEBIAN_FRONTEND=noninteractive
+ARG BUILD_PARALLEL_WORKERS=2
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       build-essential cmake git pkg-config \
@@ -118,7 +121,7 @@ RUN . /opt/ros/kilted/setup.sh && \
         -DBUILD_DOC=OFF \
         -DALLOW_PARALLELIZATION=ON \
         -DBUILD_SHARED_LIBS=ON \
- && make -j$(nproc) install
+ && make -j${BUILD_PARALLEL_WORKERS} install
 
 # =============================================================================
 # Stage 0c: ublox-msgs-builder
@@ -186,6 +189,7 @@ RUN . /opt/ros/kilted/setup.sh \
 FROM ros:kilted-ros-base AS nav2-mppi-patched-builder
 
 ARG DEBIAN_FRONTEND=noninteractive
+ARG BUILD_PARALLEL_WORKERS=2
 ARG NAV2_REF=kilted
 ARG NAV2_SHA=71a1d84f49dc48e226c96619188ee12054824ff3
 ARG NAV2_URL=https://github.com/ros-navigation/navigation2.git
@@ -225,11 +229,13 @@ RUN cd /ws/src/navigation2/nav2_mppi_controller \
 WORKDIR /ws
 RUN /bin/bash -c "\
     source /opt/ros/kilted/setup.bash && \
+    export CMAKE_BUILD_PARALLEL_LEVEL=${BUILD_PARALLEL_WORKERS} && \
+    export MAKEFLAGS=-j${BUILD_PARALLEL_WORKERS} && \
     colcon build --merge-install \
       --packages-select nav2_mppi_controller \
       --install-base /opt/nav2_mppi_patched \
       --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF -Wno-dev \
-      --parallel-workers \$(nproc) \
+      --parallel-workers ${BUILD_PARALLEL_WORKERS} \
     " \
  && rm -rf /ws/build /ws/log /ws/src
 
@@ -419,15 +425,19 @@ RUN rosdep update --rosdistro kilted \
 # =============================================================================
 FROM deps AS build-interfaces
 
+ARG BUILD_PARALLEL_WORKERS=2
+
 # Copy the full mowgli_interfaces package
 COPY ros2/src/mowgli_interfaces/ src/mowgli_interfaces/
 
 RUN /bin/bash -c "\
     source /opt/ros/kilted/setup.bash && \
+    export CMAKE_BUILD_PARALLEL_LEVEL=${BUILD_PARALLEL_WORKERS} && \
+    export MAKEFLAGS=-j${BUILD_PARALLEL_WORKERS} && \
     colcon build \
       --packages-select mowgli_interfaces \
       --cmake-args -DCMAKE_BUILD_TYPE=Release \
-      --parallel-workers \$(nproc) \
+      --parallel-workers ${BUILD_PARALLEL_WORKERS} \
     "
 
 # =============================================================================
@@ -437,6 +447,7 @@ RUN /bin/bash -c "\
 FROM build-interfaces AS build
 
 ARG BUILD_TYPE=Release
+ARG BUILD_PARALLEL_WORKERS=2
 
 # Now copy the rest of the source tree plus the sidecar tools package
 COPY ros2/src/ src/
@@ -464,10 +475,12 @@ RUN /bin/bash -c "\
 RUN /bin/bash -c "\
     source /opt/ros/kilted/setup.bash && \
     source install/setup.bash && \
+    export CMAKE_BUILD_PARALLEL_LEVEL=${BUILD_PARALLEL_WORKERS} && \
+    export MAKEFLAGS=-j${BUILD_PARALLEL_WORKERS} && \
     export CMAKE_PREFIX_PATH=/opt/fields2cover-300:/opt/gtsam:\${CMAKE_PREFIX_PATH:-} && \
     colcon build \
       --cmake-args -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DBUILD_TESTING=OFF \
-      --parallel-workers \$(nproc) \
+      --parallel-workers ${BUILD_PARALLEL_WORKERS} \
       --event-handlers console_cohesion+ \
     "
 
