@@ -84,7 +84,7 @@ done
 
 section "Universal GNSS compose uses the canonical mowgli-gps sidecar"
 
-for required in "GNSS_STACK:" "GNSS_RECEIVER_FAMILY:" "GNSS_SERIAL_DEVICE:" "GNSS_FRAME_ID:" "GNSS_NTRIP_GGA_ENABLED:"; do
+for required in "GNSS_STACK:" "GNSS_RECEIVER_FAMILY:" "GNSS_SERIAL_DEVICE:" "GNSS_FRAME_ID:" "GNSS_NTRIP_GGA_ENABLED:" "GNSS_PUBLISH_RATE_HZ:" "GNSS_PUBLIC_RTCM_ENABLED:" "GNSS_DIAGNOSTIC_PROJECTION_ENABLED:"; do
   if grep -q "$required" "$COMPOSE_FILE"; then
     pass "compose contains sidecar env: $required"
   else

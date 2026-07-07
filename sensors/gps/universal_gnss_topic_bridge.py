@@ -168,6 +168,8 @@ class UniversalGnssTopicBridge(Node):
         self.declare_parameter("input_diagnostics_topic", "/diagnostics")
         self.declare_parameter("input_rtcm_topic", "/_gps_internal/universal/rtcm")
         self.declare_parameter("output_rtcm_topic", "/rtcm")
+        self.declare_parameter("diagnostic_projection_enabled", True)
+        self.declare_parameter("public_rtcm_enabled", True)
 
         self._backend = str(self.get_parameter("backend").value)
         self._receiver_family = str(self.get_parameter("receiver_family").value)
@@ -179,8 +181,13 @@ class UniversalGnssTopicBridge(Node):
         input_diagnostics_topic = str(self.get_parameter("input_diagnostics_topic").value)
         input_rtcm_topic = str(self.get_parameter("input_rtcm_topic").value)
         output_rtcm_topic = str(self.get_parameter("output_rtcm_topic").value)
+        diagnostic_projection_enabled = bool(
+            self.get_parameter("diagnostic_projection_enabled").value
+        )
+        public_rtcm_enabled = bool(self.get_parameter("public_rtcm_enabled").value)
 
         self._diagnostic_entries: dict[str, tuple[str, dict[str, str]]] = {}
+        self._diagnostic_projection_enabled = diagnostic_projection_enabled
 
         reliable_qos = QoSProfile(
             depth=10,
@@ -198,11 +205,13 @@ class UniversalGnssTopicBridge(Node):
             output_status_topic,
             reliable_qos,
         )
-        self._rtcm_pub = self.create_publisher(
-            PublicRtcmMessage,
-            output_rtcm_topic,
-            rtcm_qos,
-        )
+        self._rtcm_pub = None
+        if public_rtcm_enabled:
+            self._rtcm_pub = self.create_publisher(
+                PublicRtcmMessage,
+                output_rtcm_topic,
+                rtcm_qos,
+            )
 
         self.create_subscription(
             UniversalGnssStatus,
@@ -210,24 +219,26 @@ class UniversalGnssTopicBridge(Node):
             self._on_status,
             reliable_qos,
         )
-        self.create_subscription(
-            DiagnosticArray,
-            input_diagnostics_topic,
-            self._on_diagnostics,
-            reliable_qos,
-        )
-        self.create_subscription(
-            RtcmFrame,
-            input_rtcm_topic,
-            self._on_rtcm,
-            rtcm_qos,
-        )
+        if diagnostic_projection_enabled:
+            self.create_subscription(
+                DiagnosticArray,
+                input_diagnostics_topic,
+                self._on_diagnostics,
+                reliable_qos,
+            )
+        if public_rtcm_enabled:
+            self.create_subscription(
+                RtcmFrame,
+                input_rtcm_topic,
+                self._on_rtcm,
+                rtcm_qos,
+            )
 
         self.get_logger().info(
             "Bridging Universal GNSS topics: "
             f"{input_status_topic} -> {output_status_topic}, "
-            f"{input_diagnostics_topic} -> {output_status_topic} correction_stream/msm_summary, "
-            f"{input_rtcm_topic} -> {output_rtcm_topic}"
+            f"diagnostic_projection={diagnostic_projection_enabled}, "
+            f"public_rtcm={public_rtcm_enabled}"
         )
 
     def _on_status(self, msg: UniversalGnssStatus) -> None:
@@ -278,7 +289,8 @@ class UniversalGnssTopicBridge(Node):
             PublicGnssStatus.BASELINE_STATUS_UNKNOWN,
         )
 
-        self._apply_diagnostic_projection(public_msg)
+        if self._diagnostic_projection_enabled:
+            self._apply_diagnostic_projection(public_msg)
 
         self._status_pub.publish(public_msg)
 
@@ -385,6 +397,8 @@ class UniversalGnssTopicBridge(Node):
         }
 
     def _on_rtcm(self, msg: RtcmFrame) -> None:
+        if self._rtcm_pub is None:
+            return
         public_msg = PublicRtcmMessage()
         public_msg.message = list(msg.data)
         self._rtcm_pub.publish(public_msg)

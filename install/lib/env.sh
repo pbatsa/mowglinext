@@ -160,6 +160,9 @@ sync_gnss_env_contract_values() {
   : "${GNSS_RTCM_FORWARDING:=true}"
   : "${GNSS_NTRIP_GGA_ENABLED:=$(if [[ "${GNSS_NTRIP_MOUNTPOINT:-}" =~ ^[Nn][Ee][Aa][Rr] ]]; then printf 'true\n'; else printf 'false\n'; fi)}"
   : "${GNSS_NTRIP_GGA_INTERVAL_S:=10}"
+  : "${GNSS_PUBLISH_RATE_HZ:=5.0}"
+  : "${GNSS_PUBLIC_RTCM_ENABLED:=true}"
+  : "${GNSS_DIAGNOSTIC_PROJECTION_ENABLED:=true}"
 }
 
 write_gnss_env_contract_keys() {
@@ -180,6 +183,9 @@ write_gnss_env_contract_keys() {
   upsert_env_key "$env_file" "GNSS_RTCM_FORWARDING" "$GNSS_RTCM_FORWARDING"
   upsert_env_key "$env_file" "GNSS_NTRIP_GGA_ENABLED" "$GNSS_NTRIP_GGA_ENABLED"
   upsert_env_key "$env_file" "GNSS_NTRIP_GGA_INTERVAL_S" "$GNSS_NTRIP_GGA_INTERVAL_S"
+  upsert_env_key "$env_file" "GNSS_PUBLISH_RATE_HZ" "$GNSS_PUBLISH_RATE_HZ"
+  upsert_env_key "$env_file" "GNSS_PUBLIC_RTCM_ENABLED" "$GNSS_PUBLIC_RTCM_ENABLED"
+  upsert_env_key "$env_file" "GNSS_DIAGNOSTIC_PROJECTION_ENABLED" "$GNSS_DIAGNOSTIC_PROJECTION_ENABLED"
 }
 
 setup_env() {
@@ -223,6 +229,9 @@ setup_env() {
   : "${GNSS_RTCM_FORWARDING:=}"
   : "${GNSS_NTRIP_GGA_ENABLED:=}"
   : "${GNSS_NTRIP_GGA_INTERVAL_S:=}"
+  : "${GNSS_PUBLISH_RATE_HZ:=}"
+  : "${GNSS_PUBLIC_RTCM_ENABLED:=}"
+  : "${GNSS_DIAGNOSTIC_PROJECTION_ENABLED:=}"
 
   # LiDAR
   : "${LIDAR_ENABLED:=true}"

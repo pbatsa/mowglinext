@@ -214,8 +214,32 @@ resolve_ntrip_gga_interval_s() {
   printf '%s\n' "${GNSS_NTRIP_GGA_INTERVAL_S:-10}"
 }
 
+resolve_publish_rate_hz() {
+  printf '%s\n' "${GNSS_PUBLISH_RATE_HZ:-5.0}"
+}
+
+resolve_public_rtcm_enabled() {
+  normalize_bool "${GNSS_PUBLIC_RTCM_ENABLED:-true}"
+}
+
+resolve_diagnostic_projection_enabled() {
+  normalize_bool "${GNSS_DIAGNOSTIC_PROJECTION_ENABLED:-true}"
+}
+
 resolve_frame_id() {
   printf '%s\n' "${GNSS_FRAME_ID:-gps_link}"
+}
+
+ros_executable() {
+  local package="${1:?ros_executable: missing package}"
+  local executable="${2:?ros_executable: missing executable}"
+  local prefix
+  prefix="$(ros2 pkg prefix "$package" 2>/dev/null || true)"
+  if [ -n "$prefix" ] && [ -x "$prefix/lib/$package/$executable" ]; then
+    printf '%s\n' "$prefix/lib/$package/$executable"
+    return 0
+  fi
+  return 1
 }
 
 if [ "$(normalize_lower "${GNSS_STACK:-universal}")" = "disabled" ]; then
@@ -261,15 +285,26 @@ ntrip_password="$(resolve_ntrip_password)"
 ntrip_mountpoint="$(resolve_ntrip_mountpoint)"
 ntrip_gga_enabled="$(resolve_ntrip_gga_enabled)"
 ntrip_gga_interval_s="$(resolve_ntrip_gga_interval_s)"
+publish_rate_hz="$(resolve_publish_rate_hz)"
+public_rtcm_enabled="$(resolve_public_rtcm_enabled)"
+diagnostic_projection_enabled="$(resolve_diagnostic_projection_enabled)"
 
-echo "[start_gps.sh] Runtime=universal receiver_family=${receiver_family} transport=${transport} device=${serial_device} baud=${serial_baud}"
+echo "[start_gps.sh] Runtime=universal receiver_family=${receiver_family} transport=${transport} device=${serial_device} baud=${serial_baud} publish_rate_hz=${publish_rate_hz}"
+echo "[start_gps.sh] Optional outputs: public_rtcm=${public_rtcm_enabled} diagnostic_projection=${diagnostic_projection_enabled}"
 
-ros2 run universal_gnss_ros2 receiver_node --ros-args \
+receiver_exe="$(ros_executable universal_gnss_ros2 receiver_node || true)"
+if [ -n "$receiver_exe" ]; then
+  receiver_cmd=("$receiver_exe")
+else
+  receiver_cmd=(ros2 run universal_gnss_ros2 receiver_node)
+fi
+
+"${receiver_cmd[@]}" --ros-args \
   -p "receiver_family:=${receiver_family}" \
   -p "transport:=${transport}" \
   -p "serial_device:=${serial_device}" \
   -p "serial_baud:=${serial_baud}" \
-  -p "publish_rate_hz:=5.0" \
+  -p "publish_rate_hz:=${publish_rate_hz}" \
   -p "frame_id:=${frame_id}" \
   -r status:=${internal_status_topic} \
   -r diagnostics:=/diagnostics \
@@ -285,13 +320,22 @@ python3 /universal_gnss_topic_bridge.py --ros-args \
   -p "output_status_topic:=/gps/status" \
   -p "input_diagnostics_topic:=/diagnostics" \
   -p "input_rtcm_topic:=${internal_rtcm_topic}" \
+  -p "public_rtcm_enabled:=${public_rtcm_enabled}" \
+  -p "diagnostic_projection_enabled:=${diagnostic_projection_enabled}" \
   -p "output_rtcm_topic:=/rtcm" &
 UNIVERSAL_BRIDGE_PID=$!
 
 if [ "$ntrip_enabled" = "true" ]; then
   echo "[start_gps.sh] Runtime=universal NTRIP enabled: ${ntrip_host}:${ntrip_port}/${ntrip_mountpoint}"
   sleep 3
-  ros2 run universal_gnss_ros2 ntrip_node --ros-args \
+  ntrip_exe="$(ros_executable universal_gnss_ros2 ntrip_node || true)"
+  if [ -n "$ntrip_exe" ]; then
+    ntrip_cmd=("$ntrip_exe")
+  else
+    ntrip_cmd=(ros2 run universal_gnss_ros2 ntrip_node)
+  fi
+
+  "${ntrip_cmd[@]}" --ros-args \
     -p "caster_host:=${ntrip_host}" \
     -p "caster_port:=${ntrip_port}" \
     -p "mountpoint:=${ntrip_mountpoint}" \

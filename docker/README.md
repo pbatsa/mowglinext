@@ -163,6 +163,9 @@ Copy `.env.example` to `.env` and edit. All keys and their defaults:
 | `LIDAR_BAUD` | `230400` | LD19 baud rate |
 | `MOWGLI_ROS2_IMAGE` | `ghcr.io/mowglinext/mowglinext/mowgli-ros2:main` | Full ROS2 stack |
 | `GPS_IMAGE` | `ghcr.io/mowglinext/mowglinext/gps:main` | u-blox + NTRIP driver |
+| `GNSS_PUBLISH_RATE_HZ` | `5.0` | Universal GNSS fix/status publish rate |
+| `GNSS_PUBLIC_RTCM_ENABLED` | `true` | Republish internal RTCM frames on public `/rtcm`; set `false` when no ROS consumers need raw RTCM |
+| `GNSS_DIAGNOSTIC_PROJECTION_ENABLED` | `true` | Fold GNSS diagnostic details into `/gps/status`; set `false` for lower sidecar CPU when only fix/basic status are needed |
 | `LIDAR_IMAGE` | `ghcr.io/mowglinext/mowglinext/lidar-ldlidar:main` | LD19 LiDAR driver |
 | `MAVROS_IMAGE` | `ghcr.io/mowglinext/mowglinext/mavros:main` | MAVROS bridge |
 | `GUI_IMAGE` | `ghcr.io/mowglinext/mowglinext/mowglinext-gui:main` | Web GUI |
