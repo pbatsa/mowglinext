@@ -202,8 +202,6 @@ def generate_launch_description() -> LaunchDescription:
     foxglove_role = PythonExpression(
         [
             "'",
-            system_role,
-            "'.lower() in ('all', 'remote') and '",
             enable_foxglove,
             "'.lower() in ('true', '1', 'yes')",
         ]
