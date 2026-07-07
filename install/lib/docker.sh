@@ -25,6 +25,11 @@ run_with_docker_access() {
     return
   fi
 
+  if docker info >/dev/null 2>&1; then
+    docker "$@"
+    return
+  fi
+
   if docker_group_session_ready; then
     docker "$@"
     return
@@ -42,6 +47,10 @@ run_with_docker_access() {
 
 docker_access_ready() {
   if [ "${EUID:-$(id -u)}" -eq 0 ]; then
+    return 0
+  fi
+
+  if docker info >/dev/null 2>&1; then
     return 0
   fi
 
