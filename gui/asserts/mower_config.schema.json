@@ -310,7 +310,7 @@
             "custom"
           ],
           "default": "balanced",
-          "description": "Vendor-neutral constellation/signal profile forwarded to Universal GNSS plan/apply tools. Custom is reserved for future profile-file or raw-command workflows."
+          "description": "Vendor-neutral constellation/signal profile used by the future backend translator. Custom is reserved for future profile-file or raw-command workflows."
         },
         "gnss_profile_rate_hz": {
           "type": "integer",

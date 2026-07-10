@@ -1643,8 +1643,8 @@
         "description": "Reserved for future user-provided profile files or raw receiver command sets when backend support is available."
       }
     },
-    "signalProfileHelpText": "Signal profiles are vendor-neutral and are forwarded to Universal GNSS plan/apply tools. Different receiver families can map the same profile to different signal and constellation choices.",
-    "signalProfileCustomHelpText": "Custom is reserved for user-provided profile files or raw receiver command sets from Expert/Developer mode. Upload and raw-command backend support are not wired yet.",
+    "signalProfileHelpText": "Signal profiles are vendor-neutral. Different receiver families can map the same profile to different signal and constellation choices.",
+    "signalProfileCustomHelpText": "Custom will later support user-provided profile files or raw receiver command sets from Expert/Developer mode. Upload and raw-command backend support are not wired yet.",
     "unicore": {
       "title": "Vendor-Specific Settings",
       "description": "Use these only when the generic GNSS abstractions are not enough. Universal GNSS remains the source of truth for Unicore model gating and documented signal-group handling.",

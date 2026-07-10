@@ -183,16 +183,6 @@ function parseDiagnosticFloat(value: string | undefined): number | undefined {
     return Number.isFinite(parsed) ? parsed : undefined;
 }
 
-function parseMsmAgeS(values: Record<string, string>): number | undefined {
-    const ageS = parseDiagnosticFloat(values.age_s);
-    if (ageS !== undefined) {
-        return ageS;
-    }
-
-    const ageNs = parseDiagnosticFloat(values.age_ns);
-    return ageNs === undefined ? undefined : ageNs / 1_000_000_000;
-}
-
 function correctionStreamStatusFromMessage(message: string | undefined): number | undefined {
     const normalized = message?.trim().toLowerCase() ?? "";
     if (!normalized) {
@@ -270,7 +260,7 @@ export function deriveGnssStatusFromDiagnostics(
     const msmSummarySatelliteCount = parseDiagnosticInt(msmSummaryValues.satellite_count);
     const msmSummarySignalCount = parseDiagnosticInt(msmSummaryValues.signal_count);
     const msmSummaryCellCount = parseDiagnosticInt(msmSummaryValues.cell_count);
-    const msmSummaryAgeS = parseMsmAgeS(msmSummaryValues);
+    const msmSummaryAgeS = parseDiagnosticFloat(msmSummaryValues.age_s);
     const msmSummaryConstellationsSeen = msmSummaryValues.constellations_seen;
     const fixType = navSatFixStatusToGnssFixType(parseDiagnosticInt(gpsValues.fix_status));
     const fixValid = parseDiagnosticBool(summaryValues.fix_valid) ??
