@@ -1643,8 +1643,8 @@
         "description": "Réservé à de futurs fichiers de profil fournis par l'utilisateur ou à des jeux de commandes récepteur brutes lorsque le support backend sera disponible."
       }
     },
-    "signalProfileHelpText": "Les profils de signal sont indépendants du fabricant. Différentes familles de récepteurs peuvent associer le même profil à des choix de signaux et de constellations différents.",
-    "signalProfileCustomHelpText": "Personnalisé prendra plus tard en charge des fichiers de profil fournis par l'utilisateur ou des jeux de commandes récepteur brutes depuis le mode Expert/Développeur. Le support backend pour l'upload et les commandes brutes n'est pas encore branché.",
+    "signalProfileHelpText": "Les profils de signal sont indépendants du fabricant et sont transmis aux outils plan/apply d'Universal GNSS. Différentes familles de récepteurs peuvent associer le même profil à des choix de signaux et de constellations différents.",
+    "signalProfileCustomHelpText": "Personnalisé est réservé aux fichiers de profil fournis par l'utilisateur ou aux jeux de commandes récepteur brutes depuis le mode Expert/Développeur. Le support backend pour l'upload et les commandes brutes n'est pas encore branché.",
     "unicore": {
       "title": "Réglages spécifiques au fabricant",
       "description": "À n'utiliser que lorsque les abstractions GNSS génériques ne suffisent pas. Universal GNSS reste la source de vérité pour le filtrage par modèle Unicore et la gestion des groupes de signaux documentés.",

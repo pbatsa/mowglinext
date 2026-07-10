@@ -131,6 +131,17 @@ def _parse_diagnostic_float(value: str | None) -> float | None:
         return None
 
 
+def _parse_msm_age_s(values: dict[str, str]) -> float | None:
+    age_s = _parse_diagnostic_float(values.get("age_s"))
+    if age_s is not None:
+        return age_s
+
+    age_ns = _parse_diagnostic_float(values.get("age_ns"))
+    if age_ns is None:
+        return None
+    return age_ns / 1_000_000_000.0
+
+
 def _diagnostic_value_map(status: Any) -> dict[str, str]:
     values: dict[str, str] = {}
     for item in getattr(status, "values", []):
@@ -366,7 +377,7 @@ class UniversalGnssTopicBridge(Node):
         satellite_count = _parse_diagnostic_uint(values.get("satellite_count"))
         signal_count = _parse_diagnostic_uint(values.get("signal_count"))
         cell_count = _parse_diagnostic_uint(values.get("cell_count"))
-        age_s = _parse_diagnostic_float(values.get("age_s"))
+        age_s = _parse_msm_age_s(values)
         constellations_seen = values.get("constellations_seen", "")
 
         has_value = any((

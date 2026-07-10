@@ -41,15 +41,12 @@ describe("GnssReceiverActionsCard", () => {
         });
     });
 
-    it("calls the plan endpoint and shows backend warnings and output", async () => {
+    it("calls the plan endpoint and shows backend output for a clean plan", async () => {
         const persistMock = vi.fn().mockResolvedValue(true);
         requestMock.mockResolvedValue({
             data: {
                 success: true,
                 message: "GNSS profile plan succeeded",
-                warnings: [
-                    "GNSS_SIGNAL_PROFILE is persisted in the UI, but backend translation to Universal GNSS tool arguments is not implemented yet.",
-                ],
                 executions: [
                     {
                         tool: "gnss_config_plan",
@@ -77,7 +74,7 @@ describe("GnssReceiverActionsCard", () => {
         expect(persistMock).toHaveBeenCalledTimes(1);
         const successMessages = await screen.findAllByText("GNSS profile plan succeeded");
         expect(successMessages.length).toBeGreaterThan(0);
-        expect(screen.getByText(en.settingsGnssReceiver.backendWarnings)).toBeInTheDocument();
+        expect(screen.queryByText(en.settingsGnssReceiver.backendWarnings)).not.toBeInTheDocument();
 
         await user.click(screen.getByText("gnss_config_plan"));
         expect(await screen.findByText(en.settingsGnssReceiver.commandSummary)).toBeInTheDocument();

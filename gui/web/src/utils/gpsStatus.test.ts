@@ -283,6 +283,47 @@ describe('deriveGpsStatus', () => {
         expect((merged.capability_flags ?? 0) & GnssStatusConstants.CAP_CORRECTION_STREAM).not.toBe(0);
     });
 
+    it('projects Universal GNSS correction and MSM diagnostics from canonical age_ns fields', () => {
+        expect(deriveGnssStatusFromDiagnostics({
+            status: [
+                {
+                    name: 'universal_gnss_ntrip/rtcm_forwarding',
+                    message: 'RTCM forwarding active',
+                    values: [],
+                },
+                {
+                    name: 'universal_gnss_ntrip/rtcm_semantic/msm_summary',
+                    values: [
+                        {key: 'seen', value: 'true'},
+                        {key: 'decoded', value: 'true'},
+                        {key: 'valid', value: 'true'},
+                        {key: 'message_type', value: '1087'},
+                        {key: 'station_id', value: '42'},
+                        {key: 'constellations_seen', value: 'gps,glonass'},
+                        {key: 'satellite_count', value: '1'},
+                        {key: 'signal_count', value: '2'},
+                        {key: 'cell_count', value: '2'},
+                        {key: 'age_ns', value: '400000000'},
+                    ],
+                },
+            ],
+        })).toMatchObject({
+            correction_stream_status: GnssStatusConstants.CORRECTION_STREAM_STATUS_ACTIVE,
+            msm_summary_seen: true,
+            msm_summary_decoded: true,
+            msm_summary_valid: true,
+            msm_summary_message_type: 1087,
+            msm_summary_station_id: 42,
+            msm_summary_constellations_seen: 'gps,glonass',
+            msm_summary_satellite_count: 1,
+            msm_summary_signal_count: 2,
+            msm_summary_cell_count: 2,
+            msm_summary_age_s: 0.4,
+            capability_flags: GnssStatusConstants.CAP_CORRECTION_STREAM | GnssStatusConstants.CAP_MSM_SUMMARY,
+            value_flags: GnssStatusConstants.CAP_CORRECTION_STREAM | GnssStatusConstants.CAP_MSM_SUMMARY,
+        });
+    });
+
     it('formats user-facing receiver labels without leaking backend ids', () => {
         expect(gnssReceiverLabel({backend: 'unicore', receiver_vendor: 'Unicore'})).toBe('Unicore');
         expect(gnssReceiverLabel({backend: 'ublox', receiver_vendor: 'u-blox'})).toBe('u-blox');
