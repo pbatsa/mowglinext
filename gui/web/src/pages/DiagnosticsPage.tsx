@@ -45,8 +45,8 @@ import {useCalibrationStatus} from "../hooks/useCalibrationStatus.ts";
 import {useWheelOdom} from "../hooks/useWheelOdom.ts";
 import {useWheelTicks} from "../hooks/useWheelTicks.ts";
 import {useWheelRpm} from "../hooks/useWheelRpm.ts";
-import {useDiagnosticsSnapshot} from "../hooks/useDiagnosticsSnapshot.ts";
-import {useDiagnostics} from "../hooks/useDiagnostics.ts";
+import {type ContainerHealth, useDiagnosticsSnapshot} from "../hooks/useDiagnosticsSnapshot.ts";
+import {type DiagnosticArray, type DiagnosticStatus, useDiagnostics} from "../hooks/useDiagnostics.ts";
 import {useThemeMode} from "../theme/ThemeContext.tsx";
 import {useIsMobile} from "../hooks/useIsMobile";
 import {
@@ -89,6 +89,38 @@ function secondsAgo(timestamp: string): number {
 
 const DIAG_LEVEL_COLORS: Record<number, string> = {0: "success", 1: "warning", 2: "error", 3: "default"};
 const DIAG_LEVEL_LABELS: Record<number, string> = {0: "OK", 1: "WARN", 2: "ERROR", 3: "STALE"};
+const ONBOARD_COMPUTER_DIAGNOSTIC_NAME = "Onboard Computer";
+const ONBOARD_CONTAINER_DIAGNOSTIC_PREFIX = "Onboard Container/";
+
+function diagnosticValue(entry: DiagnosticStatus | undefined, key: string): string | undefined {
+    return entry?.values?.find(v => v.key === key)?.value;
+}
+
+function diagnosticNumber(entry: DiagnosticStatus | undefined, key: string): number | undefined {
+    const raw = diagnosticValue(entry, key);
+    if (raw === undefined) {
+        return undefined;
+    }
+    const parsed = Number.parseFloat(raw);
+    return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function onboardCpuTemperature(diagnostics: DiagnosticArray): number | undefined {
+    const onboard = diagnostics.status?.find(s => s.name === ONBOARD_COMPUTER_DIAGNOSTIC_NAME);
+    return diagnosticNumber(onboard, "cpu_temperature_c");
+}
+
+function onboardContainers(diagnostics: DiagnosticArray): ContainerHealth[] {
+    return (diagnostics.status ?? [])
+        .filter(s => s.name.startsWith(ONBOARD_CONTAINER_DIAGNOSTIC_PREFIX))
+        .map(s => ({
+            name: diagnosticValue(s, "name") ?? s.name.slice(ONBOARD_CONTAINER_DIAGNOSTIC_PREFIX.length),
+            state: diagnosticValue(s, "state") ?? "unknown",
+            status: diagnosticValue(s, "status") ?? s.message ?? "",
+            started_at: diagnosticValue(s, "started_at") ?? "",
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+}
 
 // ESC status codes from mowgli_interfaces/msg/ESCStatus.msg
 // labelKey resolves through t(...) at render time (module-level: no hook here).
@@ -163,7 +195,9 @@ export const DiagnosticsPage = () => {
     const pitch = pitchFromQuaternion(qx, qy, qz, qw);
     const poseZ = pose.pose?.pose?.position?.z ?? 0;
 
-    const allContainersOk = !snapshot?.containers?.length || snapshot.containers.every(c => c.state === "running");
+    const onboardContainerRows = useMemo(() => onboardContainers(diagnostics), [diagnostics]);
+    const containerRows = onboardContainerRows.length > 0 ? onboardContainerRows : (snapshot?.containers ?? []);
+    const allContainersOk = !containerRows.length || containerRows.every(c => c.state === "running");
     const gpsAccuracy = readGnssNumber(
         gnssStatus,
         GnssStatusConstants.CAP_HORIZONTAL_ACCURACY,
@@ -172,7 +206,8 @@ export const DiagnosticsPage = () => {
     const gpsFixValid = gnssStatus.fix_valid ?? false;
     const gpsOk = gpsFixValid && gpsAccuracy !== undefined && gpsAccuracy <= 0.1;
     const gpsWarn = gpsFixValid && (gpsAccuracy === undefined || gpsAccuracy > 0.1);
-    const cpuTemp = snapshot?.system?.cpu_temperature ?? 0;
+    const onboardCpuTemp = useMemo(() => onboardCpuTemperature(diagnostics), [diagnostics]);
+    const cpuTemp = onboardCpuTemp ?? snapshot?.system?.cpu_temperature ?? 0;
 
     const alerts = useMemo(
         () => (diagnostics.status ?? []).filter(s =>
@@ -395,7 +430,7 @@ export const DiagnosticsPage = () => {
                 >
                     <Table
                         size="small"
-                        dataSource={snapshot?.containers ?? []}
+                        dataSource={containerRows}
                         columns={containerColumns}
                         rowKey="name"
                         pagination={false}

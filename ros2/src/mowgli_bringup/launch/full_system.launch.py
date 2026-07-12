@@ -449,6 +449,17 @@ def generate_launch_description() -> LaunchDescription:
     # ------------------------------------------------------------------
     # 8. Diagnostics
     # ------------------------------------------------------------------
+    host_health_node = Node(
+        condition=IfCondition(onboard_role),
+        package="mowgli_monitoring",
+        executable="host_health_node.py",
+        name="host_health_node",
+        output="screen",
+        parameters=[
+            {"use_sim_time": use_sim_time},
+        ],
+    )
+
     diagnostics_node = Node(
         condition=IfCondition(remote_role),
         package="mowgli_monitoring",
@@ -599,6 +610,7 @@ def generate_launch_description() -> LaunchDescription:
             navsat_converter_node,  # publishes /gps/absolute_pose for GUI + BT
             localization_monitor_node,
             calibrate_imu_yaw_node,
+            host_health_node,
             diagnostics_node,
             mqtt_bridge_node,
             foxglove_bridge_node,

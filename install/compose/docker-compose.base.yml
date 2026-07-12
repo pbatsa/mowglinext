@@ -47,6 +47,9 @@ services:
       # (ntrip, mavros bridge) keep :ro since they only read config.
       - ./docker/config/mowgli:/ros2_ws/config
       - ./docker/config/cyclonedds.xml:/cyclonedds.xml:ro
+      # Read-only Docker API access lets the onboard health node publish mower
+      # container state to the remote GUI in distributed deployments.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     restart: unless-stopped
     logging:
       driver: json-file

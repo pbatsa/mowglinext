@@ -145,6 +145,12 @@ install(
 )
 
 install(
+  PROGRAMS
+    scripts/host_health_node.py
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+install(
   DIRECTORY config/
   DESTINATION share/${PROJECT_NAME}/config
 )
