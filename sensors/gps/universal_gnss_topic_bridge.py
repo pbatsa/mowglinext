@@ -110,6 +110,20 @@ def _finite_public_float(value: float | None) -> float:
     return number if math.isfinite(number) else 0.0
 
 
+def _derive_public_fix_type(msg: UniversalGnssStatus, rtk_mode: int) -> int:
+    fix_type = UNIVERSAL_TO_PUBLIC_FIX_TYPE.get(
+        msg.fix_type,
+        PublicGnssStatus.FIX_TYPE_NO_FIX,
+    )
+    if not msg.fix_valid:
+        return fix_type
+    if rtk_mode == PublicGnssStatus.RTK_MODE_FIXED:
+        return PublicGnssStatus.FIX_TYPE_RTK_FIXED
+    if rtk_mode == PublicGnssStatus.RTK_MODE_FLOAT:
+        return PublicGnssStatus.FIX_TYPE_RTK_FLOAT
+    return fix_type
+
+
 def _parse_diagnostic_bool(value: str | None) -> bool | None:
     if value is None:
         return None
@@ -268,17 +282,15 @@ class UniversalGnssTopicBridge(Node):
         public_msg.backend = self._backend
         public_msg.receiver_vendor = self._receiver_vendor
 
-        fix_type = UNIVERSAL_TO_PUBLIC_FIX_TYPE.get(
-            msg.fix_type,
-            PublicGnssStatus.FIX_TYPE_NO_FIX,
-        )
-        public_msg.fix_type = fix_type
-        public_msg.fix_valid = msg.fix_valid
-        public_msg.dead_reckoning = fix_type == PublicGnssStatus.FIX_TYPE_DEAD_RECKONING
-        public_msg.rtk_mode = UNIVERSAL_TO_PUBLIC_RTK_MODE.get(
+        rtk_mode = UNIVERSAL_TO_PUBLIC_RTK_MODE.get(
             msg.rtk_mode,
             PublicGnssStatus.RTK_MODE_UNKNOWN,
         )
+        fix_type = _derive_public_fix_type(msg, rtk_mode)
+        public_msg.fix_type = fix_type
+        public_msg.fix_valid = msg.fix_valid
+        public_msg.dead_reckoning = fix_type == PublicGnssStatus.FIX_TYPE_DEAD_RECKONING
+        public_msg.rtk_mode = rtk_mode
         public_msg.quality_percent = FIX_TYPE_QUALITY.get(fix_type, 0.0)
         public_msg.capability_flags = _map_capability_flags(msg.capability_flags)
         public_msg.value_flags = _map_capability_flags(msg.value_flags)
