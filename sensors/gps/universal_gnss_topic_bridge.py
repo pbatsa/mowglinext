@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from diagnostic_msgs.msg import DiagnosticArray
@@ -99,6 +100,14 @@ def _map_capability_flags(flags: int) -> int:
         if flags & source_flag:
             mapped |= target_flag
     return mapped
+
+
+def _finite_public_float(value: float | None) -> float:
+    """Keep public ROS-to-JSON consumers from dropping samples on NaN/Inf."""
+    if value is None:
+        return 0.0
+    number = float(value)
+    return number if math.isfinite(number) else 0.0
 
 
 def _parse_diagnostic_bool(value: str | None) -> bool | None:
@@ -274,27 +283,27 @@ class UniversalGnssTopicBridge(Node):
         public_msg.capability_flags = _map_capability_flags(msg.capability_flags)
         public_msg.value_flags = _map_capability_flags(msg.value_flags)
 
-        public_msg.hdop = msg.hdop
-        public_msg.vdop = msg.vdop
-        public_msg.horizontal_accuracy_m = msg.horizontal_accuracy_m
-        public_msg.vertical_accuracy_m = msg.vertical_accuracy_m
-        public_msg.heading_deg = msg.heading_deg
-        public_msg.heading_accuracy_deg = msg.heading_accuracy_deg
+        public_msg.hdop = _finite_public_float(msg.hdop)
+        public_msg.vdop = _finite_public_float(msg.vdop)
+        public_msg.horizontal_accuracy_m = _finite_public_float(msg.horizontal_accuracy_m)
+        public_msg.vertical_accuracy_m = _finite_public_float(msg.vertical_accuracy_m)
+        public_msg.heading_deg = _finite_public_float(msg.heading_deg)
+        public_msg.heading_accuracy_deg = _finite_public_float(msg.heading_accuracy_deg)
         public_msg.differential_corrections = msg.differential_corrections
         public_msg.corrections_active = msg.corrections_active
         public_msg.satellites_used = msg.satellites_used
         public_msg.satellites_visible = msg.satellites_visible
         public_msg.satellites_tracked = msg.satellites_tracked
-        public_msg.correction_age_s = msg.correction_age_s
-        public_msg.mean_cn0_db_hz = msg.mean_cn0_db_hz
-        public_msg.max_cn0_db_hz = msg.max_cn0_db_hz
+        public_msg.correction_age_s = _finite_public_float(msg.correction_age_s)
+        public_msg.mean_cn0_db_hz = _finite_public_float(msg.mean_cn0_db_hz)
+        public_msg.max_cn0_db_hz = _finite_public_float(msg.max_cn0_db_hz)
         public_msg.dual_antenna_heading = msg.dual_antenna_heading
         public_msg.dual_antenna_baseline = msg.dual_antenna_baseline
         public_msg.interference_detected = msg.interference_detected
         public_msg.jamming_detected = msg.jamming_detected
-        public_msg.baseline_azimuth_deg = msg.baseline_azimuth_deg
-        public_msg.baseline_pitch_deg = msg.baseline_pitch_deg
-        public_msg.baseline_length_m = msg.baseline_length_m
+        public_msg.baseline_azimuth_deg = _finite_public_float(msg.baseline_azimuth_deg)
+        public_msg.baseline_pitch_deg = _finite_public_float(msg.baseline_pitch_deg)
+        public_msg.baseline_length_m = _finite_public_float(msg.baseline_length_m)
         public_msg.baseline_solution_status = UNIVERSAL_TO_PUBLIC_BASELINE_STATUS.get(
             msg.baseline_solution_status,
             PublicGnssStatus.BASELINE_STATUS_UNKNOWN,
@@ -342,7 +351,7 @@ class UniversalGnssTopicBridge(Node):
             public_msg.msm_summary_satellite_count = msm_summary["satellite_count"]
             public_msg.msm_summary_signal_count = msm_summary["signal_count"]
             public_msg.msm_summary_cell_count = msm_summary["cell_count"]
-            public_msg.msm_summary_age_s = msm_summary["age_s"]
+            public_msg.msm_summary_age_s = _finite_public_float(msm_summary["age_s"])
             if msm_summary["has_value"]:
                 public_msg.value_flags |= PublicGnssStatus.CAP_MSM_SUMMARY
 
