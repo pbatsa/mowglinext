@@ -26,6 +26,47 @@ def key_value(key: str, value: object) -> KeyValue:
     return msg
 
 
+def decode_chunked_body(body: bytes) -> bytes | None:
+    """Decode a small HTTP/1.1 chunked body from the Docker Unix socket."""
+    decoded = bytearray()
+    cursor = 0
+
+    while True:
+        line_end = body.find(b"\r\n", cursor)
+        if line_end < 0:
+            return None
+
+        size_line = body[cursor:line_end].split(b";", 1)[0].strip()
+        try:
+            size = int(size_line, 16)
+        except ValueError:
+            return None
+
+        cursor = line_end + 2
+        if size == 0:
+            return bytes(decoded)
+
+        chunk_end = cursor + size
+        if len(body) < chunk_end + 2:
+            return None
+
+        decoded.extend(body[cursor:chunk_end])
+        cursor = chunk_end + 2
+
+
+def docker_response_body(response: bytes) -> bytes | None:
+    headers, separator, body = response.partition(b"\r\n\r\n")
+    if not separator:
+        return None
+
+    for line in headers.split(b"\r\n")[1:]:
+        key, _, value = line.partition(b":")
+        if key.strip().lower() == b"transfer-encoding" and b"chunked" in value.lower():
+            return decode_chunked_body(body)
+
+    return body
+
+
 class HostHealthNode(Node):
     def __init__(self) -> None:
         super().__init__("host_health_node")
@@ -81,8 +122,8 @@ class HostHealthNode(Node):
             return []
 
         response = b"".join(chunks)
-        _, separator, body = response.partition(b"\r\n\r\n")
-        if not separator:
+        body = docker_response_body(response)
+        if body is None:
             return []
 
         try:
