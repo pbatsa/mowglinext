@@ -266,6 +266,24 @@ def generate_launch_description() -> LaunchDescription:
             "'.lower() not in ('true', '1', 'yes')",
         ]
     )
+    launch_lidar_localization = PythonExpression(
+        [
+            "'",
+            launch_localization,
+            "'.lower() in ('true', '1', 'yes') and '",
+            use_lidar,
+            "'.lower() in ('true', '1', 'yes')",
+        ]
+    )
+    launch_onboard_lidar_collision_monitor = PythonExpression(
+        [
+            "'",
+            launch_onboard_collision_monitor,
+            "'.lower() in ('true', '1', 'yes') and '",
+            use_lidar,
+            "'.lower() in ('true', '1', 'yes')",
+        ]
+    )
 
     # ------------------------------------------------------------------
     # Config paths — one shared base + thin lidar/no-lidar overlays, deep-
@@ -856,7 +874,7 @@ def generate_launch_description() -> LaunchDescription:
         executable="collision_monitor",
         name="collision_monitor",
         output="screen",
-        condition=IfCondition(launch_onboard_collision_monitor),
+        condition=IfCondition(launch_onboard_lidar_collision_monitor),
         parameters=[nav2_params],
         remappings=[
             ("/tf", "tf"),
@@ -869,7 +887,7 @@ def generate_launch_description() -> LaunchDescription:
         executable="lifecycle_manager",
         name="lifecycle_manager_collision_monitor",
         output="screen",
-        condition=IfCondition(launch_onboard_collision_monitor),
+        condition=IfCondition(launch_onboard_lidar_collision_monitor),
         parameters=[
             {"autostart": True},
             {"node_names": ["collision_monitor"]},
@@ -1015,7 +1033,7 @@ def generate_launch_description() -> LaunchDescription:
     # acquired while rotating doesn't appear smeared by ω×scan_period in
     # the map frame. Output /scan_deskewed feeds the rest of the pipeline.
     scan_deskew = Node(
-        condition=IfCondition(launch_localization),
+        condition=IfCondition(launch_lidar_localization),
         package="mowgli_localization",
         executable="scan_deskew_node",
         name="scan_deskew",
@@ -1031,7 +1049,7 @@ def generate_launch_description() -> LaunchDescription:
     )
 
     costmap_scan_filter = Node(
-        condition=IfCondition(launch_localization),
+        condition=IfCondition(launch_lidar_localization),
         package="mowgli_localization",
         executable="costmap_scan_filter_node",
         name="costmap_scan_filter",
