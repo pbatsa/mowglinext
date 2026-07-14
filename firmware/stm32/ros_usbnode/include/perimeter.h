@@ -19,6 +19,7 @@
 * Includes
 *******************************************************************************/
 #include <stdbool.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -73,6 +74,11 @@ int Perimeter_IsActive(void);
  * @return There was enough data to read.
  */
 int Perimeter_UpdateMsg(float *left,float *center,float *right);
+
+/**
+ * @brief Read partial sample counters for debugging no-sample states.
+ */
+void Perimeter_ReadSampleCounts(float *left,float *center,float *right);
 
 /**
  * @brief Are perimeter values printed to the debug console?

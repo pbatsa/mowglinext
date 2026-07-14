@@ -1004,11 +1004,14 @@ extern "C" void broadcast_handler() {
     nbt_consume(&perimeter_nbt, now_tick);
 
     if (perimeter_signal_code != 0u) {
-      // NaN correlations mean "listening, but no completed ADC sample group yet".
       float left = std::numeric_limits<float>::quiet_NaN();
       float center = std::numeric_limits<float>::quiet_NaN();
       float right = std::numeric_limits<float>::quiet_NaN();
-      (void)Perimeter_UpdateMsg(&left, &center, &right);
+      if (!Perimeter_UpdateMsg(&left, &center, &right)) {
+        // Debug path: no full correlation group yet, so report per-coil sample
+        // counters in the existing float fields.
+        Perimeter_ReadSampleCounts(&left, &center, &right);
+      }
 
       pkt_perimeter_wire_t pkt = {};
       pkt.type = PKT_ID_PERIMETER_WIRE;

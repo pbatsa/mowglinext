@@ -234,6 +234,12 @@ int Perimeter_UpdateMsg(float *left,float *center,float *right) {
   return 1;
 }
 
+void Perimeter_ReadSampleCounts(float *left,float *center,float *right) {
+  *left = (float)coilSigN[COIL_LEFT];
+  *center = (float)coilSigN[COIL_MIDDLE];
+  *right = (float)coilSigN[COIL_RIGHT];
+}
+
 int Perimeter_UsesDebug(void) {
   return print_pos>=0;
 }
