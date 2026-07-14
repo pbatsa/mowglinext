@@ -42,6 +42,7 @@
 
 // Math
 #include <cmath>
+#include <limits>
 
 // IMU
 #include "imu/imu.h"
@@ -1002,10 +1003,13 @@ extern "C" void broadcast_handler() {
 
     nbt_consume(&perimeter_nbt, now_tick);
 
-    float left = 0.0f;
-    float center = 0.0f;
-    float right = 0.0f;
-    if (Perimeter_UpdateMsg(&left, &center, &right)) {
+    if (perimeter_signal_code != 0u) {
+      // NaNs mean "listening, but no completed ADC sample group yet".
+      float left = std::numeric_limits<float>::quiet_NaN();
+      float center = std::numeric_limits<float>::quiet_NaN();
+      float right = std::numeric_limits<float>::quiet_NaN();
+      (void)Perimeter_UpdateMsg(&left, &center, &right);
+
       pkt_perimeter_wire_t pkt = {};
       pkt.type = PKT_ID_PERIMETER_WIRE;
       pkt.signal_code = perimeter_signal_code;
