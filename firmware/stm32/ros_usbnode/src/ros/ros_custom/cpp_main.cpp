@@ -1004,7 +1004,7 @@ extern "C" void broadcast_handler() {
     nbt_consume(&perimeter_nbt, now_tick);
 
     if (perimeter_signal_code != 0u) {
-      // NaNs mean "listening, but no completed ADC sample group yet".
+      // NaN correlations mean "listening, but no completed ADC sample group yet".
       float left = std::numeric_limits<float>::quiet_NaN();
       float center = std::numeric_limits<float>::quiet_NaN();
       float right = std::numeric_limits<float>::quiet_NaN();
