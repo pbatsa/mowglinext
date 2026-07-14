@@ -91,6 +91,7 @@ static uint32_t g_boot_reset_csr = 0;
 uint8_t g_boot_reset_cause_code = 0;
 uint8_t g_boot_last_watchdog_stage_code = WATCHDOG_STAGE_NONE;
 volatile uint8_t g_firmware_debug_enabled = 0u;
+volatile uint8_t g_blade_inhibit_enabled = 0u;
 static volatile uint8_t g_main_loop_stage = WATCHDOG_STAGE_NONE;
 
 static const char *BOOT_PrimaryResetCause(uint32_t csr)

@@ -225,6 +225,7 @@ def generate_launch_description() -> LaunchDescription:
             {"imu_cal_periodic_recal_sec": float(robot_params.get(
                 "imu_cal_periodic_recal_sec", 600.0))},
             # Lift / blade safety tuning.
+            {"mowing_enabled": bool(robot_params.get("mowing_enabled", True))},
             {"lift_recovery_mode": bool(robot_params.get("lift_recovery_mode", False))},
             {"lift_blade_resume_delay_sec": float(robot_params.get(
                 "lift_blade_resume_delay_sec", 1.0))},

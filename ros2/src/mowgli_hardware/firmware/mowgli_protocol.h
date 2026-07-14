@@ -127,6 +127,7 @@ extern "C"
 
 /** Optional firmware diagnostics / fine-grained breadcrumbs enabled. */
 #define CONFIG_FLAG_FIRMWARE_DEBUG (1u << 0u)
+#define CONFIG_FLAG_BLADE_INHIBIT (1u << 1u)
 
 /* ---------------------------------------------------------------------------
  * status_bitmask bit definitions  (pkt_status_t::status_bitmask)

@@ -495,6 +495,13 @@ private:
     // parameters above). Calibration and manual GUI adjustments persist
     // back to that file via map_server_node and calibrate_imu_yaw_node,
     // so a redeploy reads the latest values from the same source.
+    mowing_enabled_ = declare_parameter<bool>("mowing_enabled", true);
+    if (!mowing_enabled_)
+    {
+      RCLCPP_WARN(get_logger(),
+                  "mowing_enabled=false: hardware bridge will suppress blade-on commands and "
+                  "request STM32 blade inhibit");
+    }
     lift_recovery_mode_ = declare_parameter<bool>("lift_recovery_mode", false);
     lift_blade_resume_delay_sec_ = declare_parameter<double>("lift_blade_resume_delay_sec", 1.0);
     // imu_yaw parameter is used by URDF for mounting rotation, not needed here
@@ -2111,12 +2118,14 @@ private:
     const uint8_t previous_protocol = fw_protocol_version_;
     const std::string previous_version = fw_version_str_;
     const bool previous_fw_diag_enabled = firmware_debug_enabled_;
+    const bool previous_blade_inhibit_enabled = firmware_blade_inhibit_enabled_;
 
     LlConfigRsp pkt{};
     std::memcpy(&pkt, data, sizeof(LlConfigRsp));
 
     fw_protocol_version_ = pkt.protocol_version;
     firmware_debug_enabled_ = (pkt.active_flags & CONFIG_FLAG_FIRMWARE_DEBUG) != 0u;
+    firmware_blade_inhibit_enabled_ = (pkt.active_flags & CONFIG_FLAG_BLADE_INHIBIT) != 0u;
     firmware_debug_requested_ = firmware_debug_enabled_;
     config_control_resend_count_ = 0;
     fw_version_major_ = pkt.fw_version_major;
@@ -2156,6 +2165,16 @@ private:
                    static_cast<unsigned>(fw_protocol_version_),
                    static_cast<unsigned>(kMowgliProtocolVersion));
     }
+    if (!mowing_enabled_ && firmware_blade_inhibit_enabled_ && !previous_blade_inhibit_enabled)
+    {
+      RCLCPP_WARN(get_logger(), "STM32 blade inhibit is active (mowing_enabled=false)");
+    }
+    else if (!mowing_enabled_ && !firmware_blade_inhibit_enabled_)
+    {
+      RCLCPP_ERROR(get_logger(),
+                   "mowing_enabled=false but STM32 did not acknowledge blade inhibit; host-side "
+                   "suppression is active, reflash firmware for board-level inhibit");
+    }
 
     if (firmware_debug_enabled_)
     {
@@ -2181,6 +2200,7 @@ private:
     fw_compatible_ = false;
     fw_protocol_version_ = 0u;
     fw_version_str_.clear();
+    firmware_blade_inhibit_enabled_ = false;
     config_req_resend_count_ = 5;
     config_control_resend_count_ = 0;
     fw_handshake_start_ = now();
@@ -2225,7 +2245,15 @@ private:
     }
     LlConfigReq pkt{};
     pkt.type = PACKET_ID_LL_HIGH_LEVEL_CONFIG_REQ;
-    pkt.flags = firmware_debug_requested_ ? CONFIG_FLAG_FIRMWARE_DEBUG : 0u;
+    pkt.flags = 0u;
+    if (firmware_debug_requested_)
+    {
+      pkt.flags |= CONFIG_FLAG_FIRMWARE_DEBUG;
+    }
+    if (!mowing_enabled_)
+    {
+      pkt.flags |= CONFIG_FLAG_BLADE_INHIBIT;
+    }
     return send_raw_packet(reinterpret_cast<const uint8_t*>(&pkt),
                            sizeof(LlConfigReq) - sizeof(uint16_t));
   }
@@ -2375,7 +2403,12 @@ private:
   void on_mower_control(const std::shared_ptr<mowgli_interfaces::srv::MowerControl::Request> req,
                         std::shared_ptr<mowgli_interfaces::srv::MowerControl::Response> res)
   {
-    mow_enabled_ = (req->mow_enabled != 0u);
+    const bool requested_mow_enabled = (req->mow_enabled != 0u);
+    if (requested_mow_enabled && !mowing_enabled_)
+    {
+      RCLCPP_WARN(get_logger(), "MowerControl: mowing_enabled=false; suppressing blade-on request");
+    }
+    mow_enabled_ = requested_mow_enabled && mowing_enabled_;
 
     RCLCPP_INFO(get_logger(),
                 "MowerControl: mow_enabled=%s mow_direction=%u",
@@ -2385,7 +2418,7 @@ private:
     // Send blade command to STM32
     send_blade_command(mow_enabled_ ? 1u : 0u, req->mow_direction);
 
-    res->success = true;
+    res->success = !requested_mow_enabled || mowing_enabled_;
   }
 
   void on_emergency_stop(const std::shared_ptr<mowgli_interfaces::srv::EmergencyStop::Request> req,
@@ -2511,6 +2544,8 @@ private:
   double fw_handshake_timeout_s_{5.0};
   bool firmware_debug_requested_{false};
   bool firmware_debug_enabled_{false};
+  bool firmware_blade_inhibit_enabled_{false};
+  bool mowing_enabled_{true};
 
   // Host-side sub-deadband forward-velocity clamp (on_cmd_vel): any |vx| below
   // this is zeroed before reaching the firmware. Lowered from the legacy 0.15

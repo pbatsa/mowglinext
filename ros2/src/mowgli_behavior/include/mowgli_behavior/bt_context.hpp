@@ -224,6 +224,7 @@ struct BTContext
   /// min-drive clamp).
   double transit_speed{0.25};
   double mowing_speed{0.2};
+  bool mowing_enabled{true};
 
   /// True if it was raining when the current mowing session started.
   /// Set by WasRainingAtStart, checked by IsNewRain.

@@ -243,6 +243,7 @@ def generate_launch_description() -> LaunchDescription:
             # hardcoded 0.5/0.25 and the configured speeds never took effect.
             {"transit_speed": float(robot_params.get("transit_speed", 0.25))},
             {"mowing_speed": float(robot_params.get("mowing_speed", 0.2))},
+            {"mowing_enabled": bool(robot_params.get("mowing_enabled", True))},
             # Battery thresholds — operator-tunable in mowgli_robot.yaml and
             # surfaced on the GUI Settings page. Forwarded here under the C++
             # parameter names the behavior node declares (behavior_tree.yaml

@@ -56,6 +56,16 @@ def test_full_system_no_longer_passes_legacy_gnss_status_params() -> None:
     assert "gps_" "protocol" not in launch_source
 
 
+def test_full_system_forwards_mowing_enabled_to_behavior() -> None:
+    launch_source = _read_launch_source("full_system.launch.py")
+    assert '"mowing_enabled": bool(robot_params.get("mowing_enabled", True))' in launch_source
+
+
+def test_mowgli_launch_forwards_mowing_enabled_to_hardware_bridge() -> None:
+    launch_source = _read_launch_source("mowgli.launch.py")
+    assert '"mowing_enabled": bool(robot_params.get("mowing_enabled", True))' in launch_source
+
+
 def test_sim_full_system_no_longer_passes_legacy_gnss_status_params() -> None:
     launch_source = _read_launch_source("sim_full_system.launch.py")
     assert "publish_" "gnss_status" not in launch_source

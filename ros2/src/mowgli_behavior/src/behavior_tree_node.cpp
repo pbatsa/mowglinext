@@ -585,6 +585,12 @@ private:
     // stomped the launch-injected values — the configured speeds never applied.
     context_->transit_speed = declare_parameter<double>("transit_speed", 0.25);
     context_->mowing_speed = declare_parameter<double>("mowing_speed", 0.2);
+    context_->mowing_enabled = declare_parameter<bool>("mowing_enabled", true);
+    if (!context_->mowing_enabled)
+    {
+      RCLCPP_WARN(get_logger(),
+                  "mowing_enabled=false: behavior tree will suppress blade-on commands");
+    }
 
     // Rain delay: parameter in minutes, blackboard in seconds.
     const double rain_delay_minutes = declare_parameter<double>("rain_delay_minutes", 30.0);

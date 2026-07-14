@@ -94,6 +94,7 @@ extern uint8_t do_chirp;
 extern uint8_t g_boot_reset_cause_code;
 extern uint8_t g_boot_last_watchdog_stage_code;
 extern volatile uint8_t g_firmware_debug_enabled;
+extern volatile uint8_t g_blade_inhibit_enabled;
 extern openmower_status_e main_eOpenmowerStatus;
 
 // uart statistics

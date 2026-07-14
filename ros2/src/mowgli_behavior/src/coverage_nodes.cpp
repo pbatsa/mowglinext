@@ -683,6 +683,13 @@ void FollowStrip::onHalted()
 void FollowStrip::setBladeEnabled(bool enabled)
 {
   auto ctx = config().blackboard->get<std::shared_ptr<BTContext>>("context");
+  const bool requested_enabled = enabled;
+  if (requested_enabled && !ctx->mowing_enabled)
+  {
+    enabled = false;
+    RCLCPP_WARN(ctx->node->get_logger(),
+                "FollowStrip: mowing_enabled=false; suppressing blade-on request");
+  }
   if (!blade_client_)
   {
     blade_client_ = ctx->node->create_client<mowgli_interfaces::srv::MowerControl>(

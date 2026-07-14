@@ -238,6 +238,8 @@ extern "C" {
 
 /** Optional firmware diagnostics / fine-grained breadcrumbs enabled. */
 #define CONFIG_FLAG_FIRMWARE_DEBUG (1u << 0u)
+/** Runtime blade inhibit requested by the host for blade-off testing. */
+#define CONFIG_FLAG_BLADE_INHIBIT (1u << 1u)
 
 /* ---------------------------------------------------------------------------
  * Packed wire-format structs

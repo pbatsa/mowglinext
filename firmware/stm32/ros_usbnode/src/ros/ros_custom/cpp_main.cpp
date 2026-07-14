@@ -434,7 +434,7 @@ static void on_cmd_blade(const uint8_t *data, size_t len) {
    * IDLE every tick), but refusing to latch the target here keeps state
    * consistent and avoids an instantaneous spin-up on the IDLE→MOWING edge.
    * blade_dir is still accepted so direction is correct once mowing starts. */
-  if (main_eOpenmowerStatus == OPENMOWER_STATUS_IDLE) {
+  if ((main_eOpenmowerStatus == OPENMOWER_STATUS_IDLE) || (g_blade_inhibit_enabled != 0u)) {
     target_blade_on_off = 0;
   } else {
     target_blade_on_off = pkt->blade_on;
@@ -469,11 +469,18 @@ static void on_config_req(const uint8_t *data, size_t len) {
   }
   const uint8_t flags = (len >= 2u) ? data[1] : 0u;
   g_firmware_debug_enabled = (flags & CONFIG_FLAG_FIRMWARE_DEBUG) != 0u ? 1u : 0u;
+  g_blade_inhibit_enabled = (flags & CONFIG_FLAG_BLADE_INHIBIT) != 0u ? 1u : 0u;
 
   pkt_config_rsp_t rsp;
   rsp.type = PKT_ID_CONFIG_RSP;
   rsp.protocol_version = MOWGLI_PROTOCOL_VERSION;
-  rsp.active_flags = g_firmware_debug_enabled != 0u ? CONFIG_FLAG_FIRMWARE_DEBUG : 0u;
+  rsp.active_flags = 0u;
+  if (g_firmware_debug_enabled != 0u) {
+    rsp.active_flags |= CONFIG_FLAG_FIRMWARE_DEBUG;
+  }
+  if (g_blade_inhibit_enabled != 0u) {
+    rsp.active_flags |= CONFIG_FLAG_BLADE_INHIBIT;
+  }
   rsp.fw_version_major = MOWGLI_FW_VERSION_MAJOR;
   rsp.fw_version_minor = MOWGLI_FW_VERSION_MINOR;
   rsp.fw_version_patch = MOWGLI_FW_VERSION_PATCH;
@@ -537,6 +544,7 @@ extern "C" void motors_handler() {
     float snap_left_target = left_target_mps;
     float snap_right_target = right_target_mps;
     uint8_t snap_target_blade = target_blade_on_off;
+    uint8_t snap_blade_inhibit = g_blade_inhibit_enabled;
     uint32_t snap_heartbeat = last_heartbeat_tick;
     uint32_t snap_cmd_vel = last_cmd_vel_tick;
     float snap_ticks_per_meter = DRIVEMOTOR_GetTicksPerMeter();
@@ -563,6 +571,9 @@ extern "C" void motors_handler() {
       hard_stop = true;
       blade_on_off = 0;
     } else {
+      if (snap_blade_inhibit != 0u) {
+        blade_on_off = 0;
+      }
       const uint32_t cmd_vel_age_ms = HAL_GetTick() - snap_cmd_vel;
       if (cmd_vel_age_ms > 200u) {
         /* Command-vel watchdog: zero motors if the host hasn't

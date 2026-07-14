@@ -56,7 +56,13 @@ BT::NodeStatus SetMowerEnabled::tick()
                  res.error().c_str());
     return BT::NodeStatus::FAILURE;
   }
-  const bool enabled = res.value();
+  const bool requested_enabled = res.value();
+  const bool enabled = requested_enabled && ctx->mowing_enabled;
+  if (requested_enabled && !ctx->mowing_enabled)
+  {
+    RCLCPP_WARN(ctx->node->get_logger(),
+                "SetMowerEnabled: mowing_enabled=false; suppressing blade-on request");
+  }
 
   if (!client_)
   {

@@ -177,6 +177,7 @@ constexpr std::size_t LL_USS_SENSOR_COUNT = 5u;
 // ---------------------------------------------------------------------------
 
 constexpr uint8_t CONFIG_FLAG_FIRMWARE_DEBUG = (1u << 0u);
+constexpr uint8_t CONFIG_FLAG_BLADE_INHIBIT = (1u << 1u);
 
 // ---------------------------------------------------------------------------
 // Wire-format structs — all fields packed with no padding
