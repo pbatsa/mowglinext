@@ -39,6 +39,8 @@ extern "C" {
  * see which main-loop section was running when the WWDG fired. The same v3
  * diagnostic stack also uses the config request/response flags byte to gate
  * optional firmware diagnostics/breadcrumb detail on demand.
+ * Perimeter-wire packets are an additive v3 extension: new firmware can publish
+ * raw coil correlations and old firmware simply ignores the new listen command.
  * ---------------------------------------------------------------------------*/
 
 #define MOWGLI_PROTOCOL_VERSION 3u
@@ -81,6 +83,9 @@ extern "C" {
 /** Blade motor status packet (pkt_blade_status_t). */
 #define PKT_ID_BLADE_STATUS 0x05u
 
+/** Perimeter-wire coil correlation packet (pkt_perimeter_wire_t). */
+#define PKT_ID_PERIMETER_WIRE 0x07u
+
 /** High-level config response packet. */
 #define PKT_ID_CONFIG_RSP 0x12u
 
@@ -119,6 +124,9 @@ extern "C" {
  *  firmware validates and clamps every field; its compile-time defaults remain
  *  the power-on fallback. */
 #define PKT_ID_SET_DRIVE_PID 0x54u
+
+/** Select/off the perimeter-wire signal listened for by the firmware. */
+#define PKT_ID_SET_PERIMETER_LISTEN 0x55u
 
 /* ---------------------------------------------------------------------------
  * status_bitmask bit definitions  (pkt_status_t::status_bitmask)
@@ -340,6 +348,25 @@ typedef struct {
 } pkt_reset_cause_t;
 
 /**
+ * @brief Perimeter-wire coil correlations — Firmware -> Host
+ * (PKT_ID_PERIMETER_WIRE = 0x07).
+ *
+ * Values are unitless matched-filter scores for the selected perimeter signal.
+ * ROS 2 owns thresholding and steering policy; firmware only samples coils and
+ * reports raw left/center/right correlations.
+ *
+ * Wire size: 16 bytes.
+ */
+typedef struct {
+  uint8_t type;         /**< PKT_ID_PERIMETER_WIRE */
+  uint8_t signal_code;  /**< 0=off, otherwise firmware-defined signal code */
+  float left_correlation;   /**< Left coil matched-filter correlation */
+  float center_correlation; /**< Center coil matched-filter correlation */
+  float right_correlation;  /**< Right coil matched-filter correlation */
+  uint16_t crc;             /**< CRC-16 CCITT over preceding bytes */
+} pkt_perimeter_wire_t;
+
+/**
  * @brief Heartbeat packet — Host -> Firmware (PKT_ID_HEARTBEAT = 0x42).
  *
  * The host must send this at least once every ~500 ms or the STM32 will
@@ -450,6 +477,18 @@ typedef struct {
 } pkt_set_drive_pid_t;
 
 /**
+ * @brief Select/off perimeter-wire listening — Host -> Firmware
+ * (PKT_ID_SET_PERIMETER_LISTEN = 0x55).
+ *
+ * Wire size: 4 bytes.
+ */
+typedef struct {
+  uint8_t type;        /**< PKT_ID_SET_PERIMETER_LISTEN */
+  uint8_t signal_code; /**< 0=off, otherwise firmware-defined signal code */
+  uint16_t crc;        /**< CRC-16 CCITT over preceding bytes */
+} pkt_set_perimeter_listen_t;
+
+/**
  * @brief Blade motor status packet — Firmware -> Host (PKT_ID_BLADE_STATUS =
  * 0x05).
  *
@@ -533,6 +572,10 @@ typedef struct {
  *   pkt_reset_cause_t:
  *     type(1) + reset_cause(1) + last_stage_before_reset(1) + crc(2) = 5
  *
+ *   pkt_perimeter_wire_t:
+ *     type(1) + signal_code(1) + left/center/right_correlation(12) +
+ *     crc(2) = 16
+ *
  *   pkt_heartbeat_t:
  *     type(1) + emergency_requested(1) + emergency_release_requested(1) +
  *     crc(2) = 5
@@ -559,6 +602,8 @@ _Static_assert(sizeof(pkt_odometry_t) == 17u,
                "pkt_odometry_t layout unexpected");
 _Static_assert(sizeof(pkt_reset_cause_t) == 5u,
                "pkt_reset_cause_t layout unexpected");
+_Static_assert(sizeof(pkt_perimeter_wire_t) == 16u,
+               "pkt_perimeter_wire_t layout unexpected");
 _Static_assert(sizeof(pkt_heartbeat_t) == 5u,
                "pkt_heartbeat_t layout unexpected");
 _Static_assert(sizeof(pkt_hl_state_t) == 5u,
@@ -570,6 +615,26 @@ _Static_assert(sizeof(pkt_config_rsp_t) == 8u,
                "pkt_config_rsp_t layout unexpected");
 _Static_assert(sizeof(pkt_set_drive_pid_t) == 27u,
                "pkt_set_drive_pid_t layout unexpected");
+_Static_assert(sizeof(pkt_set_perimeter_listen_t) == 4u,
+               "pkt_set_perimeter_listen_t layout unexpected");
+_Static_assert(offsetof(pkt_perimeter_wire_t, type) == 0u,
+               "pkt_perimeter_wire_t.type offset unexpected");
+_Static_assert(offsetof(pkt_perimeter_wire_t, signal_code) == 1u,
+               "pkt_perimeter_wire_t.signal_code offset unexpected");
+_Static_assert(offsetof(pkt_perimeter_wire_t, left_correlation) == 2u,
+               "pkt_perimeter_wire_t.left_correlation offset unexpected");
+_Static_assert(offsetof(pkt_perimeter_wire_t, center_correlation) == 6u,
+               "pkt_perimeter_wire_t.center_correlation offset unexpected");
+_Static_assert(offsetof(pkt_perimeter_wire_t, right_correlation) == 10u,
+               "pkt_perimeter_wire_t.right_correlation offset unexpected");
+_Static_assert(offsetof(pkt_perimeter_wire_t, crc) == 14u,
+               "pkt_perimeter_wire_t.crc offset unexpected");
+_Static_assert(offsetof(pkt_set_perimeter_listen_t, type) == 0u,
+               "pkt_set_perimeter_listen_t.type offset unexpected");
+_Static_assert(offsetof(pkt_set_perimeter_listen_t, signal_code) == 1u,
+               "pkt_set_perimeter_listen_t.signal_code offset unexpected");
+_Static_assert(offsetof(pkt_set_perimeter_listen_t, crc) == 2u,
+               "pkt_set_perimeter_listen_t.crc offset unexpected");
 _Static_assert(offsetof(pkt_set_drive_pid_t, type) == 0u,
                "pkt_set_drive_pid_t.type offset unexpected");
 _Static_assert(offsetof(pkt_set_drive_pid_t, ticks_per_meter) == 1u,

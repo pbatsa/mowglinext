@@ -6,8 +6,8 @@
   <description>
     ROS2 message, service, and action definitions for the Mowgli autonomous lawn mower.
     Provides interfaces for mower status, emergency handling, power management,
-    ESC control, high-level state, GNSS runtime state, absolute pose, wheel odometry, map areas,
-    coverage paths, and IMU data.
+    ESC control, high-level state, GNSS runtime state, absolute pose, wheel odometry, perimeter
+    wire sensing, map areas, coverage paths, and IMU data.
   </description>
   <maintainer email="cedric@example.com">Cedric</maintainer>
   <license>GPL-3.0</license>

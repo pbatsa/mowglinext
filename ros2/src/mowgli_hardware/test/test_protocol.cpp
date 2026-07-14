@@ -69,6 +69,13 @@ TEST(ProtocolSizes, ResetCausePacketSize)
   EXPECT_EQ(sizeof(LlResetCause), 5u);
 }
 
+TEST(ProtocolSizes, PerimeterWirePacketSize)
+{
+  // type(1) + signal_code(1) + left/center/right correlations(3*4)
+  // + crc(2) = 16.
+  EXPECT_EQ(sizeof(LlPerimeterWire), 16u);
+}
+
 TEST(ProtocolSizes, HeartbeatPacketSize)
 {
   EXPECT_EQ(sizeof(LlHeartbeat), 5u);
@@ -96,6 +103,12 @@ TEST(ProtocolSizes, SetDrivePidPacketSize)
   EXPECT_EQ(sizeof(LlSetDrivePid), 27u);
 }
 
+TEST(ProtocolSizes, SetPerimeterListenPacketSize)
+{
+  // type(1) + signal_code(1) + crc(2) = 4.
+  EXPECT_EQ(sizeof(LlSetPerimeterListen), 4u);
+}
+
 TEST(ProtocolSizes, ConfigPacketSizes)
 {
   // Firmware version handshake / runtime config. Req carries flags; Rsp
@@ -117,6 +130,7 @@ TEST(ProtocolIds, PacketIdValues)
   EXPECT_EQ(PACKET_ID_LL_UI_EVENT, 0x03);
   EXPECT_EQ(PACKET_ID_LL_ODOMETRY, 0x04);
   EXPECT_EQ(PACKET_ID_LL_RESET_CAUSE, 0x06);
+  EXPECT_EQ(PACKET_ID_LL_PERIMETER_WIRE, 0x07);
   EXPECT_EQ(PACKET_ID_LL_HIGH_LEVEL_CONFIG_REQ, 0x11);
   EXPECT_EQ(PACKET_ID_LL_HIGH_LEVEL_CONFIG_RSP, 0x12);
   EXPECT_EQ(PACKET_ID_LL_HEARTBEAT, 0x42);
@@ -125,6 +139,7 @@ TEST(ProtocolIds, PacketIdValues)
   EXPECT_EQ(PACKET_ID_LL_CMD_BLADE, 0x51);
   EXPECT_EQ(PACKET_ID_LL_REBOOT, 0x52);
   EXPECT_EQ(PACKET_ID_LL_SET_DRIVE_PID, 0x54);
+  EXPECT_EQ(PACKET_ID_LL_SET_PERIMETER_LISTEN, 0x55);
 }
 
 // ---------------------------------------------------------------------------
@@ -298,6 +313,18 @@ TEST(ProtocolRoundtrip, ResetCausePacket)
   roundtrip_struct(pkt);
 }
 
+TEST(ProtocolRoundtrip, PerimeterWirePacket)
+{
+  LlPerimeterWire pkt{};
+  pkt.type = PACKET_ID_LL_PERIMETER_WIRE;
+  pkt.signal_code = 1;
+  pkt.left_correlation = -12.5f;
+  pkt.center_correlation = 24.0f;
+  pkt.right_correlation = 3.25f;
+
+  roundtrip_struct(pkt);
+}
+
 TEST(ProtocolRoundtrip, HighLevelStatePacket)
 {
   LlHighLevelState pkt{};
@@ -330,6 +357,58 @@ TEST(ProtocolRoundtrip, SetDrivePidPacket)
   pkt.pwm_per_mps = 300.0f;
 
   roundtrip_struct(pkt);
+}
+
+TEST(ProtocolRoundtrip, SetPerimeterListenPacket)
+{
+  LlSetPerimeterListen pkt{};
+  pkt.type = PACKET_ID_LL_SET_PERIMETER_LISTEN;
+  pkt.signal_code = 2;
+
+  roundtrip_struct(pkt);
+}
+
+TEST(PerimeterWirePacket, FieldOffsetsAreCorrect)
+{
+  LlPerimeterWire pkt{};
+  pkt.type = PACKET_ID_LL_PERIMETER_WIRE;
+  pkt.signal_code = 2;
+  pkt.left_correlation = -1.25f;
+  pkt.center_correlation = 3.5f;
+  pkt.right_correlation = 8.75f;
+  pkt.crc = 0xABCD;
+
+  const uint8_t* raw = reinterpret_cast<const uint8_t*>(&pkt);
+  EXPECT_EQ(raw[0], PACKET_ID_LL_PERIMETER_WIRE);
+  EXPECT_EQ(raw[1], 2);
+
+  float value = 0.0f;
+  std::memcpy(&value, raw + 2, sizeof(value));
+  EXPECT_FLOAT_EQ(value, -1.25f);
+  std::memcpy(&value, raw + 6, sizeof(value));
+  EXPECT_FLOAT_EQ(value, 3.5f);
+  std::memcpy(&value, raw + 10, sizeof(value));
+  EXPECT_FLOAT_EQ(value, 8.75f);
+
+  uint16_t crc = 0u;
+  std::memcpy(&crc, raw + 14, sizeof(crc));
+  EXPECT_EQ(crc, 0xABCD);
+}
+
+TEST(SetPerimeterListenPacket, FieldOffsetsAreCorrect)
+{
+  LlSetPerimeterListen pkt{};
+  pkt.type = PACKET_ID_LL_SET_PERIMETER_LISTEN;
+  pkt.signal_code = 1;
+  pkt.crc = 0x1234;
+
+  const uint8_t* raw = reinterpret_cast<const uint8_t*>(&pkt);
+  EXPECT_EQ(raw[0], PACKET_ID_LL_SET_PERIMETER_LISTEN);
+  EXPECT_EQ(raw[1], 1);
+
+  uint16_t crc = 0u;
+  std::memcpy(&crc, raw + 2, sizeof(crc));
+  EXPECT_EQ(crc, 0x1234);
 }
 
 TEST(SetDrivePidPacket, PreservesFractionalTicksPerMeter)

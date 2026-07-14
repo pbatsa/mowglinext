@@ -67,6 +67,7 @@
 #define PANEL_NBT_TIME_MS 100
 #define LED_NBT_TIME_MS 1000
 #define BLADE_NBT_TIME_MS 250
+#define PERIMETER_NBT_TIME_MS 100
 
 /* ---------------------------------------------------------------------------
  * Drive motor control state
@@ -189,6 +190,9 @@ static nbt_t imu_nbt;
 static nbt_t status_nbt;
 static nbt_t led_nbt;
 static nbt_t blade_nbt;
+#ifdef OPTION_PERIMETER
+static nbt_t perimeter_nbt;
+#endif
 
 /* ---------------------------------------------------------------------------
  * Odometry timing
@@ -369,6 +373,22 @@ static void on_set_drive_pid(const uint8_t *data, size_t len) {
    * after reconnect. Printing each success over the debug UART can stall long
    * enough to starve the main loop and re-trigger the watchdog reboot loop. */
 }
+
+#ifdef OPTION_PERIMETER
+static volatile uint8_t perimeter_signal_code = 0u;
+
+static void on_set_perimeter_listen(const uint8_t *data, size_t len) {
+  if (len < sizeof(pkt_set_perimeter_listen_t) - 2u) {
+    return;
+  }
+
+  const pkt_set_perimeter_listen_t *pkt =
+      reinterpret_cast<const pkt_set_perimeter_listen_t *>(data);
+
+  perimeter_signal_code = pkt->signal_code;
+  Perimeter_ListenOn(pkt->signal_code);
+}
+#endif
 
 static void on_hl_state(const uint8_t *data, size_t len) {
   if (len < sizeof(pkt_hl_state_t) - 2u) {
@@ -971,6 +991,34 @@ extern "C" void broadcast_handler() {
     return;
   }
 
+#ifdef OPTION_PERIMETER
+  if (last_heartbeat_tick != 0u && nbt_due(&perimeter_nbt, now_tick)) {
+    const uint32_t perimeter_wire_bytes =
+        usb_cdc_framed_packet_size(sizeof(pkt_perimeter_wire_t));
+    if (!usb_cdc_should_send_telemetry_packet(perimeter_wire_bytes)) {
+      WATCHDOG_SetMainLoopStage(WATCHDOG_STAGE_BROADCAST_EXIT);
+      return;
+    }
+
+    nbt_consume(&perimeter_nbt, now_tick);
+
+    float left = 0.0f;
+    float center = 0.0f;
+    float right = 0.0f;
+    if (Perimeter_UpdateMsg(&left, &center, &right)) {
+      pkt_perimeter_wire_t pkt = {};
+      pkt.type = PKT_ID_PERIMETER_WIRE;
+      pkt.signal_code = perimeter_signal_code;
+      pkt.left_correlation = left;
+      pkt.center_correlation = center;
+      pkt.right_correlation = right;
+      mowgli_comms_send(&pkt, sizeof(pkt));
+      WATCHDOG_SetMainLoopStage(WATCHDOG_STAGE_BROADCAST_EXIT);
+      return;
+    }
+  }
+#endif
+
   // Blade motor status (4 Hz) — only after system has initialized
   if (last_heartbeat_tick != 0u && nbt_due(&blade_nbt, now_tick)) {
     const uint32_t blade_wire_bytes =
@@ -1021,6 +1069,10 @@ extern "C" void init_ROS() {
   mowgli_comms_register_handler(PKT_ID_REBOOT, on_reboot);
   mowgli_comms_register_handler(PKT_ID_SET_DRIVE_PID, on_set_drive_pid);
   mowgli_comms_register_handler(PKT_ID_CONFIG_REQ, on_config_req);
+#ifdef OPTION_PERIMETER
+  mowgli_comms_register_handler(PKT_ID_SET_PERIMETER_LISTEN,
+                                on_set_perimeter_listen);
+#endif
 
   // Initialise timers
   NBT_init(&led_nbt, LED_NBT_TIME_MS);
@@ -1029,6 +1081,9 @@ extern "C" void init_ROS() {
   NBT_init(&imu_nbt, IMU_NBT_TIME_MS);
   NBT_init(&motors_nbt, MOTORS_NBT_TIME_MS);
   NBT_init(&blade_nbt, BLADE_NBT_TIME_MS);
+#ifdef OPTION_PERIMETER
+  NBT_init(&perimeter_nbt, PERIMETER_NBT_TIME_MS);
+#endif
 
 #if USE_WHEEL_PI
   // Per-wheel velocity PI gains/limits (vendored PX4 PID, pid.hpp). D=0 — no

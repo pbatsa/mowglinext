@@ -28,6 +28,7 @@
  *   ~/power         mowgli_interfaces/msg/Power
  *   ~/imu/data_raw  sensor_msgs/msg/Imu
  *   ~/wheel_odom    nav_msgs/msg/Odometry
+ *   ~/perimeter_wire mowgli_interfaces/msg/PerimeterWire
  *   ~/dock_heading  sensor_msgs/msg/Imu  (dock yaw while charging, remapped → /gnss/heading)
  *   /battery_state  sensor_msgs/msg/BatteryState  (for opennav_docking)
  *
@@ -37,6 +38,7 @@
  * Services:
  *   ~/mower_control  mowgli_interfaces/srv/MowerControl
  *   ~/emergency_stop mowgli_interfaces/srv/EmergencyStop
+ *   ~/set_perimeter_listen mowgli_interfaces/srv/SetPerimeterListen
  *
  * Parameters:
  *   serial_port      (string,  default "/dev/mowgli")
@@ -107,11 +109,13 @@ static const char* high_level_mode_name(const uint8_t mode)
 
 #include "mowgli_interfaces/msg/emergency.hpp"
 #include "mowgli_interfaces/msg/high_level_status.hpp"
+#include "mowgli_interfaces/msg/perimeter_wire.hpp"
 #include "mowgli_interfaces/msg/power.hpp"
 #include "mowgli_interfaces/msg/status.hpp"
 #include "mowgli_interfaces/msg/wheel_tick.hpp"
 #include "mowgli_interfaces/srv/emergency_stop.hpp"
 #include "mowgli_interfaces/srv/mower_control.hpp"
+#include "mowgli_interfaces/srv/set_perimeter_listen.hpp"
 #include "nav_msgs/msg/odometry.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/battery_state.hpp"
@@ -561,6 +565,9 @@ private:
     // launch file (the GUI bridge subscribes to /wheel_ticks).
     pub_wheel_ticks_ =
         create_publisher<mowgli_interfaces::msg::WheelTick>("~/wheel_ticks", rclcpp::QoS(10));
+    pub_perimeter_wire_ =
+        create_publisher<mowgli_interfaces::msg::PerimeterWire>("~/perimeter_wire",
+                                                                rclcpp::SensorDataQoS());
     pub_battery_state_ =
         create_publisher<sensor_msgs::msg::BatteryState>("/battery_state", rclcpp::QoS(10));
     // Dock heading: publish dock_yaw at 1 Hz while charging so
@@ -670,6 +677,14 @@ private:
                std::shared_ptr<std_srvs::srv::SetBool::Response> res)
         {
           on_set_firmware_debug(req, res);
+        });
+
+    srv_set_perimeter_listen_ = create_service<mowgli_interfaces::srv::SetPerimeterListen>(
+        "~/set_perimeter_listen",
+        [this](const std::shared_ptr<mowgli_interfaces::srv::SetPerimeterListen::Request> req,
+               std::shared_ptr<mowgli_interfaces::srv::SetPerimeterListen::Response> res)
+        {
+          on_set_perimeter_listen(req, res);
         });
   }
 
@@ -921,6 +936,9 @@ private:
       case PACKET_ID_LL_RESET_CAUSE:
         handle_reset_cause(data, len);
         break;
+      case PACKET_ID_LL_PERIMETER_WIRE:
+        handle_perimeter_wire(data, len);
+        break;
       case PACKET_ID_LL_IMU:
         handle_imu(data, len);
         break;
@@ -940,6 +958,32 @@ private:
         RCLCPP_DEBUG(get_logger(), "Unhandled packet type 0x%02X (len=%zu)", data[0], len);
         break;
     }
+  }
+
+  void handle_perimeter_wire(const uint8_t* data, std::size_t len)
+  {
+    if (len < sizeof(LlPerimeterWire))
+    {
+      RCLCPP_WARN(get_logger(),
+                  "Perimeter-wire packet too short: %zu < %zu",
+                  len,
+                  sizeof(LlPerimeterWire));
+      return;
+    }
+
+    LlPerimeterWire pkt{};
+    std::memcpy(&pkt, data, sizeof(LlPerimeterWire));
+    perimeter_listen_signal_code_ = pkt.signal_code;
+
+    auto msg = mowgli_interfaces::msg::PerimeterWire{};
+    msg.header.stamp = now();
+    msg.header.frame_id = "base_link";
+    msg.listening = pkt.signal_code != mowgli_interfaces::msg::PerimeterWire::SIGNAL_OFF;
+    msg.signal_code = pkt.signal_code;
+    msg.left_correlation = pkt.left_correlation;
+    msg.center_correlation = pkt.center_correlation;
+    msg.right_correlation = pkt.right_correlation;
+    pub_perimeter_wire_->publish(msg);
   }
 
   void handle_reset_cause(const uint8_t* data, std::size_t len)
@@ -2027,6 +2071,20 @@ private:
     }
   }
 
+  bool send_set_perimeter_listen(const uint8_t signal_code)
+  {
+    if (!serial_)
+    {
+      return false;
+    }
+
+    LlSetPerimeterListen pkt{};
+    pkt.type = PACKET_ID_LL_SET_PERIMETER_LISTEN;
+    pkt.signal_code = signal_code;
+    return send_raw_packet(reinterpret_cast<const uint8_t*>(&pkt),
+                           sizeof(LlSetPerimeterListen) - sizeof(uint16_t));
+  }
+
   void on_reboot_board(const std::shared_ptr<std_srvs::srv::Trigger::Request>,
                        std::shared_ptr<std_srvs::srv::Trigger::Response> res)
   {
@@ -2088,6 +2146,32 @@ private:
     res->success = true;
     res->message =
         req->data ? "firmware debug enable request sent" : "firmware debug disable request sent";
+  }
+
+  void on_set_perimeter_listen(
+      const std::shared_ptr<mowgli_interfaces::srv::SetPerimeterListen::Request> req,
+      std::shared_ptr<mowgli_interfaces::srv::SetPerimeterListen::Response> res)
+  {
+    if (!serial_ || !serial_->is_open())
+    {
+      res->success = false;
+      res->message = "serial port not open";
+      return;
+    }
+
+    if (!send_set_perimeter_listen(req->signal_code))
+    {
+      res->success = false;
+      res->message = "failed to send perimeter listen command";
+      return;
+    }
+
+    perimeter_listen_signal_code_ = req->signal_code;
+    res->success = true;
+    res->message =
+        req->signal_code == mowgli_interfaces::srv::SetPerimeterListen::Request::SIGNAL_OFF
+            ? "perimeter listening disabled"
+            : "perimeter listen command sent";
   }
 
   void handle_blade_status(const uint8_t* data, std::size_t len)
@@ -2430,6 +2514,7 @@ private:
   rclcpp::Publisher<sensor_msgs::msg::MagneticField>::SharedPtr pub_mag_raw_;
   rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr pub_wheel_odom_;
   rclcpp::Publisher<mowgli_interfaces::msg::WheelTick>::SharedPtr pub_wheel_ticks_;
+  rclcpp::Publisher<mowgli_interfaces::msg::PerimeterWire>::SharedPtr pub_perimeter_wire_;
   // Per-wheel cumulative-magnitude tick counters + last direction (for WheelTick;
   // see handle_odometry). Magnitude is monotonic-up; direction is 1=fwd/0=rev.
   uint32_t wheel_ticks_mag_left_{0};
@@ -2447,6 +2532,7 @@ private:
   rclcpp::Service<mowgli_interfaces::srv::EmergencyStop>::SharedPtr srv_emergency_stop_;
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr srv_reboot_board_;
   rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr srv_set_firmware_debug_;
+  rclcpp::Service<mowgli_interfaces::srv::SetPerimeterListen>::SharedPtr srv_set_perimeter_listen_;
 
   rclcpp::TimerBase::SharedPtr timer_read_;
   rclcpp::TimerBase::SharedPtr timer_heartbeat_;
@@ -2502,6 +2588,7 @@ private:
   double wheel_pid_integral_limit_{100.0};
   double wheel_pid_pwm_per_mps_{300.0};
   int pid_resend_count_{5};
+  uint8_t perimeter_listen_signal_code_{mowgli_interfaces::msg::PerimeterWire::SIGNAL_OFF};
 
   // Firmware version handshake state (image <-> firmware compatibility). The
   // bridge requests the firmware's protocol/semantic version on (re)connect and

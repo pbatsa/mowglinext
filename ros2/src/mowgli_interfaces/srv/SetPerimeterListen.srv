@@ -1,0 +1,12 @@
+# Select the firmware perimeter signal to listen for. 0 disables listening.
+# Non-zero values are firmware-defined signal codes; common values are:
+#   1 = signal 1
+#   2 = signal 2
+uint8 SIGNAL_OFF=0
+uint8 SIGNAL_1=1
+uint8 SIGNAL_2=2
+
+uint8 signal_code
+---
+bool success
+string message
