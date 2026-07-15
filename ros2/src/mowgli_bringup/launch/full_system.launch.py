@@ -190,6 +190,15 @@ def generate_launch_description() -> LaunchDescription:
     all_role = PythonExpression(
         ["'", system_role, "'.lower() == 'all'"]
     )
+    navigation_cmd_vel_topic = PythonExpression(
+        [
+            "'/cmd_vel_nav' if '",
+            system_role,
+            "'.lower() == 'onboard' and '",
+            use_lidar,
+            "'.lower() not in ('true', '1', 'yes') else '/cmd_vel_monitored'",
+        ]
+    )
     mqtt_role = PythonExpression(
         [
             "'",
@@ -244,6 +253,7 @@ def generate_launch_description() -> LaunchDescription:
         launch_arguments={
             "use_sim_time": use_sim_time,
             "serial_port": serial_port,
+            "navigation_cmd_vel_topic": navigation_cmd_vel_topic,
         }.items(),
     )
 

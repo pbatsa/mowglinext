@@ -70,11 +70,18 @@ def generate_launch_description() -> LaunchDescription:
         description="Serial port connected to the Mowgli firmware board.",
     )
 
+    navigation_cmd_vel_topic_arg = DeclareLaunchArgument(
+        "navigation_cmd_vel_topic",
+        default_value="/cmd_vel_monitored",
+        description="Navigation velocity topic consumed by twist_mux.",
+    )
+
     # ------------------------------------------------------------------
     # Resolved substitutions
     # ------------------------------------------------------------------
     use_sim_time = LaunchConfiguration("use_sim_time")
     serial_port = LaunchConfiguration("serial_port")
+    navigation_cmd_vel_topic = LaunchConfiguration("navigation_cmd_vel_topic")
 
     # ------------------------------------------------------------------
     # Robot config (mowgli_robot.yaml)
@@ -265,6 +272,7 @@ def generate_launch_description() -> LaunchDescription:
         parameters=[
             twist_mux_params,
             {"use_sim_time": use_sim_time},
+            {"topics.navigation.topic": navigation_cmd_vel_topic},
         ],
         # Mux output goes directly to hardware_bridge's /cmd_vel.
         # Collision_monitor sits upstream on the Nav2 path only.
@@ -278,6 +286,7 @@ def generate_launch_description() -> LaunchDescription:
         [
             use_sim_time_arg,
             serial_port_arg,
+            navigation_cmd_vel_topic_arg,
             robot_state_publisher_node,
             hardware_bridge_node,
             twist_mux_node,
