@@ -1683,7 +1683,7 @@ private:
     msg.angular_velocity.x = gx;
     msg.angular_velocity.y = gy;
     // Keep ROS consumers and the firmware yaw loop on the same yaw convention:
-    // positive angular_velocity.z is robot +yaw (CCW). This is a targeted yaw
+    // positive angular_velocity.z is robot +yaw (CCW) for the chassis. This is a targeted yaw
     // sign correction, not a full IMU mount-frame transform.
     const double gyro_z_sign = yaw_gyro_sign_ < 0 ? -1.0 : 1.0;
     msg.angular_velocity.z = gyro_z_sign * gz;
