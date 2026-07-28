@@ -1770,7 +1770,11 @@ private:
 
     msg.angular_velocity.x = gx;
     msg.angular_velocity.y = gy;
-    msg.angular_velocity.z = gz;
+    // Keep ROS consumers and the firmware yaw loop on the same yaw convention:
+    // positive angular_velocity.z is robot +yaw (CCW). This is a targeted yaw
+    // sign correction, not a full IMU mount-frame transform.
+    const double gyro_z_sign = yaw_gyro_sign_ < 0 ? -1.0 : 1.0;
+    msg.angular_velocity.z = gyro_z_sign * gz;
 
     // Latch the calibrated gyro yaw rate for the dig detector's turn
     // exclusion. It MUST be this signal and not a wheel-derived yaw rate —
