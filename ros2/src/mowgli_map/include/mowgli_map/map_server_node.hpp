@@ -602,13 +602,11 @@ private:
   /// jitter doesn't immediately cross the boundary again.
   double boundary_recovery_offset_m_{0.8};
 
-  /// Cells inside a mowing area but within this distance of the polygon edge
-  /// are marked LETHAL in the keepout mask, so the Smac planner keeps the
-  /// transit/coverage path that much away from the real boundary. This gives
-  /// the FTC controller room to track without overshooting past the edge.
-  /// Default 0.3 m — pairs with inflation_radius 0.4 m for a total soft-wall
-  /// of ~0.7 m inside the polygon.
-  double boundary_inner_margin_m_{0.3};
+  /// Cells inside an allowed area but within this distance of the polygon edge
+  /// receive a non-lethal cost in the keepout mask. Smac can still start,
+  /// finish, and recover near the edge, but transit paths prefer to stay
+  /// inboard when the area is wide enough.
+  double boundary_inner_margin_m_{0.0};
 
   /// Extra LETHAL margin grown around drawn obstacle polygons in the keepout
   /// mask (mowgli_robot.yaml.obstacle_margin, GUI: Settings → Obstacles).

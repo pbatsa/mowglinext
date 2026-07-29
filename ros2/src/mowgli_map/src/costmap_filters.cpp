@@ -42,6 +42,12 @@ namespace mowgli_map
 // soft_boundary_margin_m deadband — firing spurious /boundary_violation
 // recoveries mid-transit.
 constexpr int8_t kOutsideSlackMaskCost = 50;
+// Traversable-but-expensive shoulder inside the authorized area boundary.
+// This is deliberately NOT lethal: a transit start/goal near the edge must
+// remain valid, but Smac should prefer a route farther inboard when space
+// exists. Keep the value aligned with the outside slack band so both sides of
+// the recorded line read as "avoid if practical, usable if necessary".
+constexpr int8_t kInsideShoulderMaskCost = kOutsideSlackMaskCost;
 
 void MapServerNode::publish_keepout_mask()
 {
@@ -227,21 +233,17 @@ void MapServerNode::publish_keepout_mask()
         }
       }
 
-      // Shrunk-polygon rule: cells inside a mowing area but within
-      // boundary_inner_margin_m_ of the nearest edge become LETHAL in the
-      // keepout mask. Effect: the Smac planner never drafts a path that
-      // comes within that margin of the polygon edge, giving the FTC
-      // controller room to track without spilling over. Combined with
-      // inflation_layer, the total soft-wall is ~ margin + inflation_radius.
-      bool inner_buffer = inside_any && boundary_inner_margin_m_ > 0.0 &&
-                          inside_min_edge_dist < boundary_inner_margin_m_;
+      // Inner shoulder rule: cells inside an area but within
+      // boundary_inner_margin_m_ of the nearest edge become mid-cost in the
+      // keepout mask. This biases blade-off transit paths away from fences and
+      // borders without making edge-adjacent starts, goals, dock approaches, or
+      // narrow corridors invalid.
+      bool inner_shoulder = inside_any && boundary_inner_margin_m_ > 0.0 &&
+                            inside_min_edge_dist < boundary_inner_margin_m_;
 
       if (inside_any)
       {
-        if (!inner_buffer)
-        {
-          mask.data[flat_idx] = 0;
-        }
+        mask.data[flat_idx] = inner_shoulder ? kInsideShoulderMaskCost : 0;
       }
       else if (within_outside_margin)
       {

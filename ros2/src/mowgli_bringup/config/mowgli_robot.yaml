@@ -389,6 +389,14 @@ mowgli:
     # did before (that outward bulge grew with the turn radius). Read LIVE by
     # coverage_server (ros2-param-set-tunable).
     chassis_safety_inset: 0.2       # 2026-07-23: field-validated default (was 0.0) — keep whole chassis inside the boundary, un-wedges the outermost ring
+    # boundary_inner_margin_m: Nav2 TRANSIT border shoulder. Cells INSIDE any
+    # mowing/navigation area but within this distance of the boundary receive a
+    # non-lethal cost in the global keepout mask, so transit paths prefer to
+    # stay away from fences/edges without making edge-adjacent starts or dock
+    # approaches invalid. This does NOT change coverage/headland paths; use
+    # chassis_safety_inset for mowing geometry. Try 0.30 m for about 1 ft of
+    # transit berth, and keep at 0.0 for narrow corridors.
+    boundary_inner_margin_m: 0.0
     # path_spacing: DEPRECATED / informational — no ROS2 node reads it. F2C swath
     # spacing is driven by tool_width (coverage_server.operation_width); a separate
     # spacing value re-opens the swath-gap bug, so this only mirrors tool_width.
