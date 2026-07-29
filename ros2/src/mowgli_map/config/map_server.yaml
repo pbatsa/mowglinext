@@ -114,14 +114,12 @@ map_server_node:
     # turns. Restore .nan once auto-compute is debugged.
     mow_angle_deg: 90.0
 
-    # Inner-boundary margin. Cells INSIDE a mowing area but within this
-    # distance of the nearest edge are marked LETHAL in the keepout mask.
-    # Intended to push Nav2 transit paths away from the polygon edge, but
-    # in practice it creates dead zones the planner can't escape when
-    # pose drift puts the robot near the edge — especially near the
-    # dock, which is often <0.5 m from the polygon boundary.
-    # Set to 0 to disable. Boundary enforcement remains via the outside
-    # keepout (cells outside any polygon → lethal) and the BT
+    # Inner-boundary transit shoulder. Cells INSIDE an allowed area but within
+    # this distance of the nearest edge receive a non-lethal keepout-mask cost.
+    # Smac can still start/finish/recover near the edge, but blade-off transit
+    # prefers to stay inboard when there is room. Set ~0.30 m for about 1 ft of
+    # border berth, or 0 to disable. Boundary enforcement remains via the
+    # outside keepout (cells outside any polygon → lethal) and the BT
     # BoundaryGuard tripwire.
     boundary_inner_margin_m: 0.0
 
