@@ -387,6 +387,20 @@ def test_navigation_launch_injects_coverage_obstacle_margin() -> None:
     )
 
 
+def test_full_system_launch_injects_boundary_inner_margin() -> None:
+    """boundary_inner_margin_m must reach map_server's keepout mask.
+
+    This is the transit-only edge shoulder: it should make Nav2 travel paths
+    prefer a little berth from mapped borders without changing F2C
+    coverage/headland geometry. If the launch injection disappears, the
+    GUI/template knob becomes inert and transit plans go back to drafting on
+    the area edge."""
+    fs_src = _read_text("launch/full_system.launch.py")
+    assert re.search(r"boundary_inner_margin_m", fs_src), (
+        "full_system.launch.py must forward boundary_inner_margin_m to map_server."
+    )
+
+
 def test_obstacle_template_defaults_match_static_yaml() -> None:
     """The template's obstacle knobs must default to the static yaml values so
     a sparse installed file (no overrides) is behaviour-preserving."""
