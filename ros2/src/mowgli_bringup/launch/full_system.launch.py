@@ -332,6 +332,13 @@ def generate_launch_description() -> LaunchDescription:
                 robot_params.get("lethal_outside_areas", True))},
             {"enforce_boundary_margin_m": float(
                 robot_params.get("enforce_boundary_margin_m", 0.40))},
+            # Optional INSIDE-edge keepout band for transit planning. This
+            # leaves mowing/headland coverage geometry alone, but prevents Nav2
+            # TRANSIT paths from drafting directly on the operator boundary
+            # when a site has fences, edging, or map-recording error along the
+            # area border. Default 0.0 preserves existing behavior.
+            {"boundary_inner_margin_m": min(1.0, max(0.0, float(
+                robot_params.get("boundary_inner_margin_m", 0.0))))},
             # tool_width is the SINGLE source of truth (mowgli_robot.yaml) for
             # both the mark_cells_mowed stamp radius / sliver detection here AND
             # coverage_server.operation_width (injected by navigation.launch.py).

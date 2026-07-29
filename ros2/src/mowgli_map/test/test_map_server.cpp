@@ -449,6 +449,38 @@ TEST_F(AreaTypeTest, KeepoutMaskTreatsNavigationAreasAsAllowed)
   EXPECT_EQ(mask_at(mask, -2.5, 2.5), 100) << "outside both areas must be lethal";
 }
 
+class BoundaryInnerMarginTest : public AreaTypeTest
+{
+protected:
+  void SetUp() override
+  {
+    rclcpp::NodeOptions opts;
+    opts.append_parameter_override("resolution", 0.1);
+    opts.append_parameter_override("map_size_x", 10.0);
+    opts.append_parameter_override("map_size_y", 10.0);
+    opts.append_parameter_override("map_frame", "map");
+    opts.append_parameter_override("tool_width", 0.2);
+    opts.append_parameter_override("map_file_path", "");
+    opts.append_parameter_override("areas_file_path", "");
+    opts.append_parameter_override("publish_rate", 1.0);
+    opts.append_parameter_override("boundary_inner_margin_m", 0.2);
+    node_ = std::make_shared<mowgli_map::MapServerNode>(opts);
+  }
+};
+
+TEST_F(BoundaryInnerMarginTest, KeepoutMaskAddsSoftCostInsideAreaBoundary)
+{
+  ASSERT_TRUE(add_area("lawn", make_rect(-3, -2, 3, 2), /*is_navigation=*/false));
+
+  const auto mask = node_->build_keepout_mask_for_test();
+  ASSERT_FALSE(mask.data.empty());
+
+  EXPECT_EQ(mask_at(mask, 0.0, 0.0), 0) << "deep interior must stay free";
+  EXPECT_EQ(mask_at(mask, 2.75, 0.0), 0) << "cell beyond the inner buffer must stay free";
+  EXPECT_EQ(mask_at(mask, 2.90, 0.0), 50)
+      << "inside-edge band must stay traversable but costly so transit avoids it when possible";
+}
+
 // No areas defined (fresh install / empty areas.dat): the mask must NOT make
 // the whole world lethal — publish_keepout_mask early-returns and never caches
 // a mask, so the costmap sees no keepout filter mask at all (everything
