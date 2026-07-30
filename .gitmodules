@@ -4,12 +4,7 @@
 	branch = main
 [submodule "ros2/src/external/universal-gnss"]
 	path = ros2/src/external/universal-gnss
-	# Pinned to the mowglinext fork. Two fork fixes are stacked here, both for
-	# issue #395: (1) GLONASS-1230 optional-for-RTK correction health
-	# (Pepeuch/universal-gnss#4) and (2) UM980 MODE ROVER UAV default +
-	# --rover-dynamic-mode override (mowglinext/universal-gnss#1). Points at the
-	# rover-dynamic-mode branch until that fork PR merges into the 1230 branch;
-	# then re-pin the gitlink to the merge commit and restore the branch below.
-	# Revert to https://github.com/pepeuch/universal-gnss.git once upstreamed.
-	url = https://github.com/mowglinext/universal-gnss.git
-	branch = fix/rover-dynamic-mode-uav
+	# Pinned to pbatsa for the NTRIP stale-stream reconnect test branch.
+	# Revert to https://github.com/mowglinext/universal-gnss.git once upstreamed.
+	url = https://github.com/pbatsa/universal-gnss.git
+	branch = codex/ntrip-stale-reconnect-upstream-dev
