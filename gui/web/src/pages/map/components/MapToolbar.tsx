@@ -1,4 +1,4 @@
-import {App, Button, Dropdown, Space} from "antd";
+import {App, Button, Dropdown, Space, Tooltip} from "antd";
 import type {MenuProps} from "antd";
 import type {MenuItemType} from "antd/es/menu/interface";
 import {
@@ -77,6 +77,10 @@ export const MapToolbar = ({
     const {t} = useTranslation();
     const isIdle = stateName === "IDLE" || stateName === "IDLE_DOCKED";
     const isRecording = stateName === "RECORDING";
+    const enableTooltips =
+        typeof window !== "undefined" &&
+        window.matchMedia?.("(hover: hover) and (pointer: fine)").matches;
+    const tooltipTitle = (tooltipKey: string) => enableTooltips ? t(tooltipKey) : undefined;
 
     const safeCall = (fn?: () => Promise<void>) => {
         fn?.().catch((e: Error) => {
@@ -87,31 +91,105 @@ export const MapToolbar = ({
             });
         });
     };
+    const menuLabel = (labelKey: string, tooltipKey: string) => (
+        <Tooltip title={tooltipTitle(tooltipKey)} placement="left">
+            <span>{t(labelKey)}</span>
+        </Tooltip>
+    );
 
     const moreMenuItems: MenuProps["items"] = [
-        {key: "satellite", icon: <GlobalOutlined />, label: useSatellite ? t("mapToolbar.darkMap") : t("mapToolbar.satellite")},
+        {
+            key: "satellite",
+            icon: <GlobalOutlined />,
+            label: (
+                <Tooltip title={tooltipTitle("mapToolbar.satelliteTooltip")} placement="left">
+                    <span>{useSatellite ? t("mapToolbar.darkMap") : t("mapToolbar.satellite")}</span>
+                </Tooltip>
+            ),
+        },
         ...(onTogglePitch
-            ? [{key: "pitch", icon: <GlobalOutlined />, label: pitched ? t("mapToolbar.flattenMap") : t("mapToolbar.tilt3dView")} satisfies NonNullable<MenuProps["items"]>[number]]
+            ? [{
+                key: "pitch",
+                icon: <GlobalOutlined />,
+                label: (
+                    <Tooltip title={tooltipTitle("mapToolbar.tilt3dViewTooltip")} placement="left">
+                        <span>{pitched ? t("mapToolbar.flattenMap") : t("mapToolbar.tilt3dView")}</span>
+                    </Tooltip>
+                ),
+            } satisfies NonNullable<MenuProps["items"]>[number]]
             : []),
         {type: "divider"},
-        {key: "areaRecording", icon: <AimOutlined />, label: t("mapToolbar.areaRecording")},
-        {key: "mowNext", icon: <ForwardOutlined />, label: t("mapToolbar.mowNextArea")},
-        {key: "continueOrPause", icon: isIdle ? <CaretRightOutlined /> : <PauseOutlined />, label: isIdle ? t("mapToolbar.continue") : t("mapToolbar.pause")},
+        {
+            key: "areaRecording",
+            icon: <AimOutlined />,
+            label: menuLabel("mapToolbar.areaRecording", "mapToolbar.areaRecordingTooltip"),
+        },
+        {
+            key: "mowNext",
+            icon: <ForwardOutlined />,
+            label: menuLabel("mapToolbar.mowNextArea", "mapToolbar.mowNextAreaTooltip"),
+        },
+        {
+            key: "continueOrPause",
+            icon: isIdle ? <CaretRightOutlined /> : <PauseOutlined />,
+            label: menuLabel(
+                isIdle ? "mapToolbar.continue" : "mapToolbar.pause",
+                isIdle ? "mapToolbar.continueTooltip" : "mapToolbar.pauseTooltip",
+            ),
+        },
         {type: "divider"},
         ...(manualMode
-            ? [{key: "stopManual", icon: <HomeOutlined />, label: t("mapToolbar.stopManualMowing"), danger: true} satisfies NonNullable<MenuProps["items"]>[number]]
-            : [{key: "manual", icon: <ControlOutlined />, label: t("mapToolbar.manualMowing")} satisfies NonNullable<MenuProps["items"]>[number]]
+            ? [{
+                key: "stopManual",
+                icon: <HomeOutlined />,
+                label: menuLabel("mapToolbar.stopManualMowing", "mapToolbar.stopManualMowingTooltip"),
+                danger: true,
+            } satisfies NonNullable<MenuProps["items"]>[number]]
+            : [{
+                key: "manual",
+                icon: <ControlOutlined />,
+                label: menuLabel("mapToolbar.manualMowing", "mapToolbar.manualMowingTooltip"),
+            } satisfies NonNullable<MenuProps["items"]>[number]]
         ),
         {type: "divider"},
-        {key: "bladeForward", icon: <ThunderboltOutlined />, label: t("mapToolbar.bladeForward")},
-        {key: "bladeBackward", icon: <ThunderboltOutlined />, label: t("mapToolbar.bladeBackward")},
-        {key: "bladeOff", icon: <ThunderboltOutlined />, label: t("mapToolbar.bladeOff"), danger: true},
+        {
+            key: "bladeForward",
+            icon: <ThunderboltOutlined />,
+            label: menuLabel("mapToolbar.bladeForward", "mapToolbar.bladeForwardTooltip"),
+        },
+        {
+            key: "bladeBackward",
+            icon: <ThunderboltOutlined />,
+            label: menuLabel("mapToolbar.bladeBackward", "mapToolbar.bladeBackwardTooltip"),
+        },
+        {
+            key: "bladeOff",
+            icon: <ThunderboltOutlined />,
+            label: menuLabel("mapToolbar.bladeOff", "mapToolbar.bladeOffTooltip"),
+            danger: true,
+        },
         {type: "divider"},
-        {key: "backup", icon: <DatabaseOutlined />, label: t("mapToolbar.backupMap")},
-        {key: "restore", icon: <DatabaseOutlined />, label: t("mapToolbar.restoreMap")},
-        {key: "importOpenMower", icon: <ImportOutlined />, label: t("mapToolbar.importFromOpenMower")},
+        {
+            key: "backup",
+            icon: <DatabaseOutlined />,
+            label: menuLabel("mapToolbar.backupMap", "mapToolbar.backupMapTooltip"),
+        },
+        {
+            key: "restore",
+            icon: <DatabaseOutlined />,
+            label: menuLabel("mapToolbar.restoreMap", "mapToolbar.restoreMapTooltip"),
+        },
+        {
+            key: "importOpenMower",
+            icon: <ImportOutlined />,
+            label: menuLabel("mapToolbar.importFromOpenMower", "mapToolbar.importFromOpenMowerTooltip"),
+        },
         {type: "divider"},
-        {key: "download", icon: <DownloadOutlined />, label: t("mapToolbar.downloadGeojson")},
+        {
+            key: "download",
+            icon: <DownloadOutlined />,
+            label: menuLabel("mapToolbar.downloadGeojson", "mapToolbar.downloadGeojsonTooltip"),
+        },
     ];
 
     const handleMoreClick: MenuProps["onClick"] = ({key}: MenuInfo) => {
@@ -135,95 +213,117 @@ export const MapToolbar = ({
 
     return (
         <Space size="small" wrap>
-            <Button
-                type="primary"
-                icon={<EditOutlined />}
-                onClick={onEditMap}
-            >
-                {t("mapToolbar.editMap")}
-            </Button>
+            <Tooltip title={tooltipTitle("mapToolbar.editMapTooltip")}>
+                <Button
+                    type="primary"
+                    icon={<EditOutlined />}
+                    onClick={onEditMap}
+                >
+                    {t("mapToolbar.editMap")}
+                </Button>
+            </Tooltip>
 
             {isRecording ? (
                 <>
-                    <AsyncButton
-                        type="primary"
-                        icon={<CheckOutlined />}
-                        onAsyncClick={onRecordFinish!}
-                    >
-                        {t("mapToolbar.finishRecording")}
-                    </AsyncButton>
-                    <AsyncButton
-                        danger
-                        icon={<CloseOutlined />}
-                        onAsyncClick={onRecordCancel!}
-                    >
-                        {t("mapToolbar.cancelRecording")}
-                    </AsyncButton>
+                    <Tooltip title={tooltipTitle("mapToolbar.finishRecordingTooltip")}>
+                        <AsyncButton
+                            type="primary"
+                            icon={<CheckOutlined />}
+                            onAsyncClick={onRecordFinish!}
+                        >
+                            {t("mapToolbar.finishRecording")}
+                        </AsyncButton>
+                    </Tooltip>
+                    <Tooltip title={tooltipTitle("mapToolbar.cancelRecordingTooltip")}>
+                        <AsyncButton
+                            danger
+                            icon={<CloseOutlined />}
+                            onAsyncClick={onRecordCancel!}
+                        >
+                            {t("mapToolbar.cancelRecording")}
+                        </AsyncButton>
+                    </Tooltip>
                 </>
             ) : (
                 <>
                     {isIdle && (
-                        <AsyncButton
-                            type="primary"
-                            icon={<PlayCircleOutlined />}
-                            onAsyncClick={onStart!}
-                        >
-                            {t("mapToolbar.start")}
-                        </AsyncButton>
+                        <Tooltip title={tooltipTitle("mapToolbar.startTooltip")}>
+                            <AsyncButton
+                                type="primary"
+                                icon={<PlayCircleOutlined />}
+                                onAsyncClick={onStart!}
+                            >
+                                {t("mapToolbar.start")}
+                            </AsyncButton>
+                        </Tooltip>
                     )}
                     {/* Home (return-to-dock) is always available outside recording
                         so the robot can be sent back even while idle off-dock. */}
-                    <AsyncButton
-                        type={isIdle ? "default" : "primary"}
-                        icon={<HomeOutlined />}
-                        onAsyncClick={onHome!}
-                    >
-                        {t("mapToolbar.home")}
-                    </AsyncButton>
+                    <Tooltip title={tooltipTitle("mapToolbar.homeTooltip")}>
+                        <AsyncButton
+                            type={isIdle ? "default" : "primary"}
+                            icon={<HomeOutlined />}
+                            onAsyncClick={onHome!}
+                        >
+                            {t("mapToolbar.home")}
+                        </AsyncButton>
+                    </Tooltip>
                 </>
             )}
 
             {!emergency ? (
-                <AsyncButton
-                    danger
-                    icon={<WarningOutlined />}
-                    onAsyncClick={onEmergencyOn!}
-                >
-                    {t("mapToolbar.emergencyOn")}
-                </AsyncButton>
+                <Tooltip title={tooltipTitle("mapToolbar.emergencyOnTooltip")}>
+                    <AsyncButton
+                        danger
+                        icon={<WarningOutlined />}
+                        onAsyncClick={onEmergencyOn!}
+                    >
+                        {t("mapToolbar.emergencyOn")}
+                    </AsyncButton>
+                </Tooltip>
             ) : (
-                <AsyncButton
-                    danger
-                    icon={<WarningOutlined />}
-                    onAsyncClick={onEmergencyOff!}
-                >
-                    {t("mapToolbar.emergencyOff")}
-                </AsyncButton>
+                <Tooltip title={tooltipTitle("mapToolbar.emergencyOffTooltip")}>
+                    <AsyncButton
+                        danger
+                        icon={<WarningOutlined />}
+                        onAsyncClick={onEmergencyOff!}
+                    >
+                        {t("mapToolbar.emergencyOff")}
+                    </AsyncButton>
+                </Tooltip>
             )}
 
-            <AsyncDropDownButton
-                icon={<ScissorOutlined />}
-                menu={{
-                    items: mowingAreas,
-                    onAsyncClick: (e: MenuInfo) => onMowArea(e.key),
-                }}
-            >
-                {t("mapToolbar.mowArea")}
-            </AsyncDropDownButton>
+            <Tooltip title={tooltipTitle("mapToolbar.mowAreaTooltip")}>
+                <AsyncDropDownButton
+                    icon={<ScissorOutlined />}
+                    menu={{
+                        items: mowingAreas,
+                        onAsyncClick: (e: MenuInfo) => onMowArea(e.key),
+                    }}
+                >
+                    {t("mapToolbar.mowArea")}
+                </AsyncDropDownButton>
+            </Tooltip>
 
-            <AsyncButton
-                danger={manualMode}
-                icon={manualMode ? <HomeOutlined /> : <ControlOutlined />}
-                onAsyncClick={manualMode ? onStopManualMode : onManualMode}
+            <Tooltip
+                title={tooltipTitle(manualMode ? "mapToolbar.stopManualTooltip" : "mapToolbar.manualMowTooltip")}
             >
-                {manualMode ? t("mapToolbar.stopManual") : t("mapToolbar.manualMow")}
-            </AsyncButton>
+                <AsyncButton
+                    danger={manualMode}
+                    icon={manualMode ? <HomeOutlined /> : <ControlOutlined />}
+                    onAsyncClick={manualMode ? onStopManualMode : onManualMode}
+                >
+                    {manualMode ? t("mapToolbar.stopManual") : t("mapToolbar.manualMow")}
+                </AsyncButton>
+            </Tooltip>
 
             <Dropdown
                 menu={{items: moreMenuItems, onClick: handleMoreClick}}
                 trigger={["click"]}
             >
-                <Button icon={<EllipsisOutlined />}>{t("mapToolbar.more")}</Button>
+                <Tooltip title={tooltipTitle("mapToolbar.moreTooltip")}>
+                    <Button icon={<EllipsisOutlined />}>{t("mapToolbar.more")}</Button>
+                </Tooltip>
             </Dropdown>
         </Space>
     );
