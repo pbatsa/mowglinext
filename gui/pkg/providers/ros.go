@@ -1,6 +1,7 @@
 package providers
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"math"
@@ -67,6 +68,19 @@ var topicMap = map[string]topicDef{
 	// mag_yaw_publisher.py in mowgli_localization.
 	"cogHeading": {"/imu/cog_heading", "sensor_msgs/msg/Imu"},
 	"magYaw":     {"/imu/mag_yaw", "sensor_msgs/msg/Imu"},
+}
+
+// suppressDuplicateTopic reports topics whose payloads are static or event-like
+// enough that re-sending identical frames only burns the shared GUI WebSocket.
+// New subscribers still receive lastMessage immediately; this only suppresses
+// repeated fan-out to already-connected browser listeners.
+func suppressDuplicateTopic(logicalKey string) bool {
+	switch logicalKey {
+	case "map", "path", "plan", "robotDescription", "recordingTrajectory":
+		return true
+	default:
+		return false
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -324,6 +338,9 @@ func (r *RosProvider) maybeUnsubscribeFoxglove(logicalKey string) {
 func (r *RosProvider) fanOut(logicalKey string, msg []byte) {
 	r.mtx.Lock()
 	defer r.mtx.Unlock()
+	if suppressDuplicateTopic(logicalKey) && bytes.Equal(r.lastMessage[logicalKey], msg) {
+		return
+	}
 	r.lastMessage[logicalKey] = msg
 	for _, sub := range r.subscribers[logicalKey] {
 		sub.Publish(msg)

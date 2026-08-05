@@ -985,7 +985,12 @@ export const MapPage: React.FC<{compact?: boolean}> = ({compact = false}) => {
                         {renderDynObstacleLayers(true)}
                     </Source>
                     {mowProgressImage && (
-                        <Source type={"image"} id={"mow-progress"} url={mowProgressImage.url} coordinates={mowProgressImage.coordinates}>
+                        <Source
+                            key={`mow-progress-${mowProgressImage.revision}`}
+                            type={"image"}
+                            id={"mow-progress"}
+                            url={mowProgressImage.url}
+                            coordinates={mowProgressImage.coordinates}>
                             <Layer type={"raster"} id={"mow-progress-layer"} paint={{
                                 "raster-opacity": 0.7,
                                 "raster-fade-duration": 0,

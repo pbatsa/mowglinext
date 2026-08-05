@@ -21,9 +21,11 @@ import (
 	"github.com/vmihailenco/msgpack/v5"
 )
 
-// wsWriteTimeout bounds a single WebSocket write. A frozen/slow client must not
-// block a delivery goroutine forever; on timeout the connection is closed.
-const wsWriteTimeout = 5 * time.Second
+// wsWriteTimeout bounds a single WebSocket write. Large map frames
+// (/coverage/full_plan, mow-progress grids, scans) can take several seconds over
+// yard Wi-Fi; keep the deadline generous enough that one big frame does not
+// churn the shared GUI stream and make the map cursor jump between reconnects.
+const wsWriteTimeout = 30 * time.Second
 
 var upgrader = websocket.Upgrader{
 	ReadBufferSize: 1024,

@@ -25,6 +25,7 @@ import { useRobotDescription } from "../../../hooks/useRobotDescription.ts";
 
 export type MowProgressImage = {
     url: string;
+    revision: number;
     coordinates: [[number, number], [number, number], [number, number], [number, number]];
 };
 
@@ -38,6 +39,7 @@ function renderMowProgress(
     offsetX: number,
     offsetY: number,
     datum: [number, number, number],
+    revision: number,
     setImage: (v: MowProgressImage | null) => void,
 ) {
     const raster = rasterizeMowProgress(grid);
@@ -52,7 +54,7 @@ function renderMowProgress(
     const bottomRight = transpose(offsetX, offsetY, datum, originY, originX + gridWidth);
     const bottomLeft = transpose(offsetX, offsetY, datum, originY, originX);
 
-    setImage({url: raster.dataUrl, coordinates: [topLeft, topRight, bottomRight, bottomLeft]});
+    setImage({url: raster.dataUrl, revision, coordinates: [topLeft, topRight, bottomRight, bottomLeft]});
 }
 
 interface UseMapStreamsOptions {
@@ -292,6 +294,7 @@ export function useMapStreams({
     // most once per animation frame (the raster + toDataURL is too heavy to run
     // on the WebSocket message handler — it would stall pose/lidar frames).
     const [mowProgressImage, setMowProgressImage] = useState<MowProgressImage | null>(null);
+    const mowProgressRevisionRef = React.useRef(0);
     const mowProgressPendingRef = React.useRef<
         { grid: OccupancyGrid; offsetX: number; offsetY: number; datum: [number, number, number] } | null
     >(null);
@@ -310,7 +313,14 @@ export function useMapStreams({
                     const pending = mowProgressPendingRef.current;
                     mowProgressPendingRef.current = null;
                     if (!pending) return;
-                    renderMowProgress(pending.grid, pending.offsetX, pending.offsetY, pending.datum, setMowProgressImage);
+                    renderMowProgress(
+                        pending.grid,
+                        pending.offsetX,
+                        pending.offsetY,
+                        pending.datum,
+                        ++mowProgressRevisionRef.current,
+                        setMowProgressImage,
+                    );
                 });
             }
         }
