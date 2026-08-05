@@ -330,7 +330,17 @@ export const MapPage: React.FC<{compact?: boolean}> = ({compact = false}) => {
             const feature = new ActivePathFeature("plan", coordinates);
             newFeatures[feature.id] = feature
         }
-        setFeatures(newFeatures)
+        setFeatures((oldFeatures) => {
+            const liveFeatures = Object.fromEntries(
+                Object.entries(oldFeatures).filter(([id]) =>
+                    id === "mower" ||
+                    id.startsWith("mower-") ||
+                    id.startsWith("dyn-obs-") ||
+                    id === "recording-trajectory"
+                )
+            ) as Record<string, MowingFeature>;
+            return {...newFeatures, ...liveFeatures};
+        })
     }, [map, path, plan, offsetX, offsetY, datum, editMap, LAYER_COLORS]);
 
     useEffect(() => {
