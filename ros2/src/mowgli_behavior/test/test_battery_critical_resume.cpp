@@ -20,19 +20,16 @@
  *
  * The CriticalBatteryDock branch used to END the session unconditionally
  * (EndSession + ClearCommand) once it left the charge-hold, so after a
- * critical-battery event the robot docked, charged fully, and then sat idle
- * forever — current_command was cleared and the coverage resume cursor was
- * wiped. The fix makes recovery AUTO-CONTINUE: after charging to the resume
- * level it undocks and falls through WITHOUT EndSession/ClearCommand (so
- * MowingSequence resumes from the saved cursor), and it ONLY ends the session
- * on a dead charger (CriticalChargerFailed), aborting the branch with FAILURE
- * so the undock/resume tail is skipped.
+ * critical-battery event the robot docked and wiped the coverage resume cursor.
+ * A later fix auto-undocked immediately after recharge, which was too eager for
+ * real docks: once charging is detected, the safe state is "parked and paused".
+ * The current contract preserves the resume cursor with PauseCommand and waits
+ * for an explicit START/schedule to resume.
  *
  * These tests exercise the exact control flow of the tail of CriticalBatteryDock
  * (from the CriticalChargeOrAbort Fallback onward) using the real EndSession,
- * ClearCommand, IsBatteryAbove and IsResumeUndockAllowed nodes, with stand-ins
- * for IsChargingProgressing (controllable) and BackUp (a marker that records
- * whether the undock/resume tail ran). The IsBatteryLow entry gate is unchanged
+ * ClearCommand, PauseCommand and IsBatteryAbove nodes, with a stand-in for
+ * IsChargingProgressing (controllable). The IsBatteryLow entry gate is unchanged
  * by the fix and is omitted here (it cannot coexist with the resume gate in a
  * single tick — entry needs battery < 10 %, resume needs battery >= 95 %).
  */
@@ -53,7 +50,8 @@ using mowgli_behavior::BTContext;
 using mowgli_behavior::ClearCommand;
 using mowgli_behavior::EndSession;
 using mowgli_behavior::IsBatteryAbove;
-using mowgli_behavior::IsResumeUndockAllowed;
+using mowgli_behavior::NeedsDocking;
+using mowgli_behavior::PauseCommand;
 
 // ---------------------------------------------------------------------------
 // Global ROS2 init/shutdown
@@ -79,11 +77,88 @@ public:
     ::testing::AddGlobalTestEnvironment(new RclcppEnvironment());
 
 // ---------------------------------------------------------------------------
-// Fixture — mirrors the tail of CriticalBatteryDock (charge-hold + branch).
+// Fixture — mirrors the CriticalBatteryDock navigation fallback.
 //
-// A returned SUCCESS means the recovery/undock tail ran; FAILURE means the
-// charger-failed abort ran (undock tail skipped). ChargingProgress and
-// UndockMarker are stand-ins we control / observe; every other node is real.
+// Charging pins are a physical dock signal. If they are already engaged, the
+// critical-battery branch must skip DockRobot and move straight into the charge
+// hold instead of trying to navigate while sitting on the dock.
+// ---------------------------------------------------------------------------
+
+class CriticalBatteryDockNavTest : public ::testing::Test
+{
+protected:
+  BT::BehaviorTreeFactory factory;
+  BT::Blackboard::Ptr blackboard;
+
+  bool is_charging = false;
+  int dock_attempts = 0;
+
+  void SetUp() override
+  {
+    blackboard = BT::Blackboard::create();
+
+    factory.registerSimpleCondition("IsCharging",
+                                    [this](BT::TreeNode&)
+                                    {
+                                      return is_charging ? BT::NodeStatus::SUCCESS
+                                                         : BT::NodeStatus::FAILURE;
+                                    });
+    factory.registerSimpleAction("DockRobot",
+                                 [this](BT::TreeNode&)
+                                 {
+                                   ++dock_attempts;
+                                   return BT::NodeStatus::SUCCESS;
+                                 });
+    factory.registerSimpleAction("CriticalBatteryNavFailed",
+                                 [](BT::TreeNode&)
+                                 {
+                                   return BT::NodeStatus::SUCCESS;
+                                 });
+  }
+
+  BT::Tree makeTree()
+  {
+    static const char* xml = R"(
+      <root BTCPP_format="4">
+        <BehaviorTree ID="MainTree">
+          <Fallback name="CriticalNavOrStop">
+            <IsCharging/>
+            <DockRobot/>
+            <CriticalBatteryNavFailed/>
+          </Fallback>
+        </BehaviorTree>
+      </root>
+    )";
+    return factory.createTreeFromText(xml, blackboard);
+  }
+};
+
+TEST_F(CriticalBatteryDockNavTest, AlreadyChargingSkipsDockRobot)
+{
+  is_charging = true;
+
+  auto tree = makeTree();
+  EXPECT_EQ(tree.tickOnce(), BT::NodeStatus::SUCCESS);
+
+  EXPECT_EQ(dock_attempts, 0);
+}
+
+TEST_F(CriticalBatteryDockNavTest, NotChargingAttemptsDockRobot)
+{
+  is_charging = false;
+
+  auto tree = makeTree();
+  EXPECT_EQ(tree.tickOnce(), BT::NodeStatus::SUCCESS);
+
+  EXPECT_EQ(dock_attempts, 1);
+}
+
+// ---------------------------------------------------------------------------
+// Fixture — mirrors the tail of CriticalBatteryDock (charge-hold + pause).
+//
+// A returned SUCCESS means the recovery pause ran; FAILURE means the
+// charger-failed abort ran. ChargingProgress is the only stand-in we control;
+// every other node is real.
 // ---------------------------------------------------------------------------
 
 class CriticalBatteryResumeTest : public ::testing::Test
@@ -94,7 +169,6 @@ protected:
   BT::BehaviorTreeFactory factory;
 
   bool charging_ok = true;  // stand-in for IsChargingProgressing
-  int undock_count = 0;  // stand-in for BackUp (undock/resume tail)
 
   void SetUp() override
   {
@@ -108,9 +182,9 @@ protected:
     blackboard->set("battery_full_pct", 95.0f);
 
     factory.registerNodeType<IsBatteryAbove>("IsBatteryAbove");
-    factory.registerNodeType<IsResumeUndockAllowed>("IsResumeUndockAllowed");
     factory.registerNodeType<EndSession>("EndSession");
     factory.registerNodeType<ClearCommand>("ClearCommand");
+    factory.registerNodeType<PauseCommand>("PauseCommand");
 
     factory.registerSimpleCondition("ChargingProgress",
                                     [this](BT::TreeNode&)
@@ -118,12 +192,6 @@ protected:
                                       return charging_ok ? BT::NodeStatus::SUCCESS
                                                          : BT::NodeStatus::FAILURE;
                                     });
-    factory.registerSimpleAction("UndockMarker",
-                                 [this](BT::TreeNode&)
-                                 {
-                                   ++undock_count;
-                                   return BT::NodeStatus::SUCCESS;
-                                 });
   }
 
   BT::Tree makeTree()
@@ -152,8 +220,7 @@ protected:
                 <AlwaysFailure/>
               </Sequence>
             </Fallback>
-            <IsResumeUndockAllowed max_attempts="3"/>
-            <UndockMarker/>
+            <PauseCommand/>
           </Sequence>
         </BehaviorTree>
       </root>
@@ -162,10 +229,10 @@ protected:
   }
 };
 
-// Recovery: charged past battery_full_pct with a healthy charger MUST
-// auto-continue — undock and fall through WITHOUT clearing the command or the
-// resume cursor, so MowingSequence resumes from where it left off.
-TEST_F(CriticalBatteryResumeTest, RecoveryAutoContinuesWithoutEndingSession)
+// Recovery: charged past battery_full_pct with a healthy charger MUST pause on
+// the dock — clear only the active command and keep the resume cursor, so the
+// next explicit START resumes from where it left off.
+TEST_F(CriticalBatteryResumeTest, RecoveryPausesOnDockAndPreservesResumeCursor)
 {
   ctx->current_command = 1;  // COMMAND_START in flight
   ctx->area_resume_pose_index[0] = 42;  // saved coverage cursor
@@ -175,12 +242,10 @@ TEST_F(CriticalBatteryResumeTest, RecoveryAutoContinuesWithoutEndingSession)
   auto tree = makeTree();
   EXPECT_EQ(tree.tickOnce(), BT::NodeStatus::SUCCESS);
 
-  // The whole point of the fix: neither EndSession nor ClearCommand ran.
-  EXPECT_EQ(ctx->current_command, 1);
+  // PauseCommand ran, but EndSession did not.
+  EXPECT_EQ(ctx->current_command, 0);
   ASSERT_EQ(ctx->area_resume_pose_index.count(0), 1u);
   EXPECT_EQ(ctx->area_resume_pose_index[0], 42u);
-  // The undock/resume tail actually executed.
-  EXPECT_EQ(undock_count, 1);
 }
 
 // Dead charger: no charge progress MUST end the session (EndSession +
@@ -199,27 +264,50 @@ TEST_F(CriticalBatteryResumeTest, DeadChargerEndsSessionAndSkipsUndock)
   // Session ended: command cleared and resume cursor wiped.
   EXPECT_EQ(ctx->current_command, 0);
   EXPECT_TRUE(ctx->area_resume_pose_index.empty());
-  // The undock/resume tail must NOT have run.
-  EXPECT_EQ(undock_count, 0);
 }
 
-// The resume-undock attempt cap still gates the auto-continue: once the session
-// has exhausted its resume-undock budget, the tail fails (IsResumeUndockAllowed
-// FAILURE) instead of undocking again — but the session/command are preserved
-// (EndSession did not run on this healthy-charger path).
-TEST_F(CriticalBatteryResumeTest, ResumeUndockCapBlocksUndockButKeepsSession)
+TEST_F(CriticalBatteryResumeTest, LowBatteryDockLatchSurvivesThresholdBounceUntilPause)
 {
+  factory.registerNodeType<NeedsDocking>("NeedsDocking");
+
+  static const char* pause_xml = R"(
+    <root BTCPP_format="4">
+      <BehaviorTree ID="MainTree">
+        <Sequence name="LowBatteryPauseTail">
+          <NeedsDocking threshold="20.0"/>
+          <PauseCommand/>
+        </Sequence>
+      </BehaviorTree>
+    </root>
+  )";
+  static const char* latch_xml = R"(
+    <root BTCPP_format="4">
+      <BehaviorTree ID="MainTree">
+        <NeedsDocking threshold="20.0"/>
+      </BehaviorTree>
+    </root>
+  )";
+
   ctx->current_command = 1;
   ctx->area_resume_pose_index[0] = 42;
-  ctx->battery_percent = 100.0f;
-  ctx->resume_undock_failures = 3;  // budget exhausted (max_attempts=3)
-  charging_ok = true;
+  ctx->battery_percent = 19.0f;
 
-  auto tree = makeTree();
-  EXPECT_EQ(tree.tickOnce(), BT::NodeStatus::FAILURE);
+  {
+    auto tree = factory.createTreeFromText(pause_xml, blackboard);
+    EXPECT_EQ(tree.tickOnce(), BT::NodeStatus::SUCCESS);
+  }
 
-  // Charger was healthy → EndSession never ran → command + cursor survive.
-  EXPECT_EQ(ctx->current_command, 1);
+  EXPECT_EQ(ctx->current_command, 0);
   ASSERT_EQ(ctx->area_resume_pose_index.count(0), 1u);
-  EXPECT_EQ(undock_count, 0);
+  EXPECT_EQ(ctx->area_resume_pose_index[0], 42u);
+  EXPECT_FALSE(ctx->battery_docking_active);
+
+  ctx->current_command = 1;
+  ctx->battery_percent = 19.0f;
+  auto latch_tree = factory.createTreeFromText(latch_xml, blackboard);
+  EXPECT_EQ(latch_tree.tickOnce(), BT::NodeStatus::SUCCESS);
+  EXPECT_TRUE(ctx->battery_docking_active);
+
+  ctx->battery_percent = 25.0f;
+  EXPECT_EQ(latch_tree.tickOnce(), BT::NodeStatus::SUCCESS);
 }

@@ -41,9 +41,9 @@
 #include "nav2_msgs/action/navigate_to_pose.hpp"
 #include "nav2_msgs/action/undock_robot.hpp"
 #include "nav2_msgs/msg/collision_monitor_state.hpp"
-#include "sensor_msgs/msg/laser_scan.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_action/rclcpp_action.hpp"
+#include "sensor_msgs/msg/laser_scan.hpp"
 #include "std_msgs/msg/bool.hpp"
 #include "std_srvs/srv/trigger.hpp"
 
@@ -304,6 +304,9 @@ private:
         {
           std::lock_guard<std::mutex> lock(context_->context_mutex);
           has_authoritative_gnss_status_ = true;
+          context_->latest_gnss_status = *msg;
+          context_->last_gnss_status_time = std::chrono::steady_clock::now();
+          context_->has_gnss_status = true;
           context_->gps_fix_type = mowgli_interfaces::gnss_status_utils::BehaviorTreeFixType(*msg);
           context_->gps_quality = mowgli_interfaces::gnss_status_utils::NormalizedQuality(*msg);
 
@@ -667,6 +670,8 @@ private:
     const bool idle_nav2_suspend = declare_parameter<bool>("idle_nav2_suspend", false);
     blackboard_->set("idle_nav2_suspend", idle_nav2_suspend);
 
+    context_->lidar_enabled = declare_parameter<bool>("lidar_enabled", false);
+
     // Transit / mowing speeds, sourced from mowgli_robot.yaml and applied to
     // the live controllers by SetNavMode (FollowPath.desired_linear_vel for the
     // RPP transit controller, FollowCoveragePath.speed_fast for FTC coverage).
@@ -693,6 +698,44 @@ private:
     // mowing. 0 disables debounce (legacy behaviour).
     const double rain_debounce_sec = declare_parameter<double>("rain_debounce_sec", 0.0);
     blackboard_->set("rain_debounce_sec", rain_debounce_sec);
+
+    // Localization safety gating: stop/pause autonomous motion when the GNSS
+    // correction stream or RTK state is degraded for longer than the configured
+    // window. GPS-only installs default stricter than LiDAR-assisted installs.
+    const bool localization_safety_enabled =
+        declare_parameter<bool>("localization_safety_enabled", true);
+    const bool require_rtk_fixed_no_lidar =
+        declare_parameter<bool>("localization_require_rtk_fixed_no_lidar", true);
+    const bool require_rtk_fixed_with_lidar =
+        declare_parameter<bool>("localization_require_rtk_fixed_with_lidar", false);
+    const double max_rtk_float_age_no_lidar =
+        declare_parameter<double>("localization_max_rtk_float_age_sec_no_lidar", 2.0);
+    const double max_rtk_float_age_with_lidar =
+        declare_parameter<double>("localization_max_rtk_float_age_sec_with_lidar", 10.0);
+    const double max_corrections_missing_no_lidar =
+        declare_parameter<double>("localization_max_corrections_missing_sec_no_lidar", 3.0);
+    const double max_corrections_missing_with_lidar =
+        declare_parameter<double>("localization_max_corrections_missing_sec_with_lidar", 8.0);
+    const double max_gnss_status_age =
+        declare_parameter<double>("localization_max_gnss_status_age_sec", 2.0);
+    const double max_msm_age_no_lidar =
+        declare_parameter<double>("localization_max_msm_age_sec_no_lidar", 3.0);
+    const double max_msm_age_with_lidar =
+        declare_parameter<double>("localization_max_msm_age_sec_with_lidar", 8.0);
+
+    blackboard_->set("localization_safety_enabled", localization_safety_enabled);
+    blackboard_->set("localization_require_rtk_fixed",
+                     context_->lidar_enabled ? require_rtk_fixed_with_lidar
+                                             : require_rtk_fixed_no_lidar);
+    blackboard_->set("localization_max_rtk_float_age_sec",
+                     context_->lidar_enabled ? max_rtk_float_age_with_lidar
+                                             : max_rtk_float_age_no_lidar);
+    blackboard_->set("localization_max_corrections_missing_sec",
+                     context_->lidar_enabled ? max_corrections_missing_with_lidar
+                                             : max_corrections_missing_no_lidar);
+    blackboard_->set("localization_max_gnss_status_age_sec", max_gnss_status_age);
+    blackboard_->set("localization_max_msm_age_sec",
+                     context_->lidar_enabled ? max_msm_age_with_lidar : max_msm_age_no_lidar);
 
     declare_parameter<double>("tick_rate", 10.0);
 

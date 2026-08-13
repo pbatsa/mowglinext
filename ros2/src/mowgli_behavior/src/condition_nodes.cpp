@@ -16,6 +16,7 @@
 #include "mowgli_behavior/condition_nodes.hpp"
 
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <memory>
 #include <mutex>
@@ -131,7 +132,12 @@ BT::NodeStatus NeedsDocking::tick()
     threshold = res.value();
   }
 
-  return ctx->battery_percent <= threshold ? BT::NodeStatus::SUCCESS : BT::NodeStatus::FAILURE;
+  if (ctx->battery_docking_active || ctx->battery_percent <= threshold)
+  {
+    ctx->battery_docking_active = true;
+    return BT::NodeStatus::SUCCESS;
+  }
+  return BT::NodeStatus::FAILURE;
 }
 
 // ---------------------------------------------------------------------------
@@ -201,6 +207,146 @@ BT::NodeStatus IsGPSFixed::tick()
   auto ctx = config().blackboard->get<std::shared_ptr<BTContext>>("context");
   std::lock_guard<std::mutex> lock(ctx->context_mutex);
   return ctx->gps_is_fixed ? BT::NodeStatus::SUCCESS : BT::NodeStatus::FAILURE;
+}
+
+// ---------------------------------------------------------------------------
+// IsLocalizationUnsafe
+// ---------------------------------------------------------------------------
+
+BT::NodeStatus IsLocalizationUnsafe::tick()
+{
+  auto ctx = config().blackboard->get<std::shared_ptr<BTContext>>("context");
+
+  bool enabled = true;
+  getInput<bool>("enabled", enabled);
+  if (!enabled)
+  {
+    rtk_float_timer_set_ = false;
+    corrections_missing_timer_set_ = false;
+    return BT::NodeStatus::FAILURE;
+  }
+
+  bool require_rtk_fixed = true;
+  double max_rtk_float_age_sec = 2.0;
+  double max_corrections_missing_sec = 3.0;
+  double max_gnss_status_age_sec = 2.0;
+  double max_msm_age_sec = 3.0;
+  getInput<bool>("require_rtk_fixed", require_rtk_fixed);
+  getInput<double>("max_rtk_float_age_sec", max_rtk_float_age_sec);
+  getInput<double>("max_corrections_missing_sec", max_corrections_missing_sec);
+  getInput<double>("max_gnss_status_age_sec", max_gnss_status_age_sec);
+  getInput<double>("max_msm_age_sec", max_msm_age_sec);
+
+  mowgli_interfaces::msg::GnssStatus status;
+  std::chrono::steady_clock::time_point status_time;
+  bool has_status = false;
+  bool gps_is_fixed = false;
+  bool charging = false;
+  bool lidar_enabled = false;
+  {
+    std::lock_guard<std::mutex> lock(ctx->context_mutex);
+    status = ctx->latest_gnss_status;
+    status_time = ctx->last_gnss_status_time;
+    has_status = ctx->has_gnss_status;
+    gps_is_fixed = ctx->gps_is_fixed;
+    charging = ctx->latest_power.charger_enabled;
+    lidar_enabled = ctx->lidar_enabled;
+  }
+
+  if (charging)
+  {
+    rtk_float_timer_set_ = false;
+    corrections_missing_timer_set_ = false;
+    return BT::NodeStatus::FAILURE;
+  }
+
+  const auto now = std::chrono::steady_clock::now();
+  if (!has_status || status_time.time_since_epoch().count() == 0)
+  {
+    RCLCPP_WARN_THROTTLE(ctx->node->get_logger(),
+                         *ctx->node->get_clock(),
+                         5000,
+                         "IsLocalizationUnsafe: no /gps/status yet");
+    return BT::NodeStatus::SUCCESS;
+  }
+
+  const double status_age_sec = std::chrono::duration<double>(now - status_time).count();
+  if (status_age_sec > max_gnss_status_age_sec)
+  {
+    RCLCPP_WARN_THROTTLE(ctx->node->get_logger(),
+                         *ctx->node->get_clock(),
+                         5000,
+                         "IsLocalizationUnsafe: /gps/status stale for %.1fs (>%.1fs)",
+                         status_age_sec,
+                         max_gnss_status_age_sec);
+    return BT::NodeStatus::SUCCESS;
+  }
+
+  const bool corrections_active =
+      status.fix_valid && status.differential_corrections && status.corrections_active &&
+      status.correction_stream_status ==
+          mowgli_interfaces::msg::GnssStatus::CORRECTION_STREAM_STATUS_ACTIVE;
+  const bool msm_recent = !status.msm_summary_seen || !std::isfinite(status.msm_summary_age_s) ||
+                          status.msm_summary_age_s <= max_msm_age_sec;
+  const bool corrections_healthy = corrections_active && msm_recent;
+  if (!corrections_healthy)
+  {
+    if (!corrections_missing_timer_set_)
+    {
+      corrections_missing_timer_set_ = true;
+      corrections_missing_since_ = now;
+    }
+    const double missing_sec =
+        std::chrono::duration<double>(now - corrections_missing_since_).count();
+    if (missing_sec > max_corrections_missing_sec)
+    {
+      RCLCPP_WARN_THROTTLE(ctx->node->get_logger(),
+                           *ctx->node->get_clock(),
+                           5000,
+                           "IsLocalizationUnsafe: corrections unhealthy for %.1fs "
+                           "(active=%s msm_age=%.1f max=%.1f, lidar=%s)",
+                           missing_sec,
+                           corrections_active ? "true" : "false",
+                           status.msm_summary_age_s,
+                           max_msm_age_sec,
+                           lidar_enabled ? "true" : "false");
+      return BT::NodeStatus::SUCCESS;
+    }
+  }
+  else
+  {
+    corrections_missing_timer_set_ = false;
+  }
+
+  if (require_rtk_fixed && !gps_is_fixed)
+  {
+    if (!rtk_float_timer_set_)
+    {
+      rtk_float_timer_set_ = true;
+      rtk_float_since_ = now;
+    }
+    const double degraded_sec = std::chrono::duration<double>(now - rtk_float_since_).count();
+    if (degraded_sec > max_rtk_float_age_sec)
+    {
+      RCLCPP_WARN_THROTTLE(ctx->node->get_logger(),
+                           *ctx->node->get_clock(),
+                           5000,
+                           "IsLocalizationUnsafe: RTK not fixed for %.1fs (>%.1fs), "
+                           "fix_type=%u rtk_mode=%u quality=%.2f",
+                           degraded_sec,
+                           max_rtk_float_age_sec,
+                           static_cast<unsigned>(status.fix_type),
+                           static_cast<unsigned>(status.rtk_mode),
+                           status.quality_percent);
+      return BT::NodeStatus::SUCCESS;
+    }
+  }
+  else
+  {
+    rtk_float_timer_set_ = false;
+  }
+
+  return BT::NodeStatus::FAILURE;
 }
 
 // ---------------------------------------------------------------------------

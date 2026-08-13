@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <chrono>
 #include <string>
 
 #include "behaviortree_cpp/behavior_tree.h"
@@ -239,6 +240,56 @@ public:
   }
 
   BT::NodeStatus tick() override;
+};
+
+// ---------------------------------------------------------------------------
+// IsLocalizationUnsafe
+// ---------------------------------------------------------------------------
+
+/// Returns SUCCESS when the authoritative GNSS state has degraded long enough
+/// that autonomous motion should pause. The guard is configurable and can be
+/// stricter on GPS-only installs than on LiDAR-assisted installs.
+///
+/// Input ports:
+///   enabled                       (bool,   default true)
+///   require_rtk_fixed             (bool,   default true)
+///   max_rtk_float_age_sec         (double, default 2.0)
+///   max_corrections_missing_sec   (double, default 3.0)
+///   max_gnss_status_age_sec       (double, default 2.0)
+///   max_msm_age_sec               (double, default 3.0)
+class IsLocalizationUnsafe : public BT::ConditionNode
+{
+public:
+  IsLocalizationUnsafe(const std::string& name, const BT::NodeConfig& config)
+      : BT::ConditionNode(name, config)
+  {
+  }
+
+  static BT::PortsList providedPorts()
+  {
+    return {
+        BT::InputPort<bool>("enabled", true, "Whether localization safety gating is enabled"),
+        BT::InputPort<bool>("require_rtk_fixed", true, "Require RTK Fixed instead of RTK Float"),
+        BT::InputPort<double>("max_rtk_float_age_sec",
+                              2.0,
+                              "Allowed duration of RTK Float before stopping"),
+        BT::InputPort<double>("max_corrections_missing_sec",
+                              3.0,
+                              "Allowed duration without active corrections before stopping"),
+        BT::InputPort<double>("max_gnss_status_age_sec",
+                              2.0,
+                              "Allowed /gps/status age before stopping"),
+        BT::InputPort<double>("max_msm_age_sec", 3.0, "Allowed MSM summary age before stopping"),
+    };
+  }
+
+  BT::NodeStatus tick() override;
+
+private:
+  bool rtk_float_timer_set_{false};
+  std::chrono::steady_clock::time_point rtk_float_since_{};
+  bool corrections_missing_timer_set_{false};
+  std::chrono::steady_clock::time_point corrections_missing_since_{};
 };
 
 // ---------------------------------------------------------------------------

@@ -432,6 +432,34 @@ if(BUILD_TESTING)
     tf2_geometry_msgs
   )
 
+  # ---- test_localization_safety ----
+  # GNSS/correction degradation guard: GPS-only autonomous motion must pause
+  # after configurable RTK/correction grace windows, while charging/manual states
+  # stay inert.
+  ament_add_gtest(test_localization_safety
+    test/test_localization_safety.cpp
+    src/condition_nodes.cpp
+  )
+
+  target_include_directories(test_localization_safety PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
+  )
+
+  ament_target_dependencies(test_localization_safety
+    rclcpp
+    behaviortree_cpp
+    mowgli_interfaces
+    nav2_msgs
+    nav_msgs
+    geometry_msgs
+    std_msgs
+    std_srvs
+    tf2
+    tf2_ros
+    tf2_geometry_msgs
+  )
+
 endif()
 
 ament_package()

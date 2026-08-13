@@ -28,6 +28,7 @@
 
 #include "geometry_msgs/msg/point32.hpp"
 #include "mowgli_interfaces/msg/emergency.hpp"
+#include "mowgli_interfaces/msg/gnss_status.hpp"
 #include "mowgli_interfaces/msg/high_level_status.hpp"
 #include "mowgli_interfaces/msg/power.hpp"
 #include "mowgli_interfaces/msg/status.hpp"
@@ -58,9 +59,12 @@ struct BTContext
   mowgli_interfaces::msg::Status latest_status;
   mowgli_interfaces::msg::Emergency latest_emergency;
   mowgli_interfaces::msg::Power latest_power;
+  mowgli_interfaces::msg::GnssStatus latest_gnss_status;
 
   /// Timestamp of the last emergency message received.
   std::chrono::steady_clock::time_point last_emergency_time{std::chrono::steady_clock::now()};
+  std::chrono::steady_clock::time_point last_gnss_status_time{};
+  bool has_gnss_status{false};
 
   // -----------------------------------------------------------------------
   // Thread safety
@@ -221,6 +225,10 @@ struct BTContext
   /// this instead of inferring fix quality from /gps/absolute_pose covariance.
   bool gps_is_fixed{false};
 
+  /// Whether the current launch/config has LiDAR available for local obstacle
+  /// and drift checks. GPS-only installs use stricter RTK/correction gates.
+  bool lidar_enabled{false};
+
   // -----------------------------------------------------------------------
   // Localization quality flags (set by boundary/replan monitors)
   // -----------------------------------------------------------------------
@@ -353,6 +361,12 @@ struct BTContext
   /// halts MowingSequence (e.g., BoundaryGuard or GpsMode transition) and
   /// later re-enters it from the top.
   bool yaw_seeded_this_session{false};
+
+  /// True once the low-battery guard has started a dock/charge pause. Keeps the
+  /// BatteryGuard branch active while charging, even if the battery percentage
+  /// rises above the low threshold before PauseCommand has preserved the resume
+  /// cursor and cleared the active command.
+  bool battery_docking_active{false};
 
   // -----------------------------------------------------------------------
   // Docking transit lifecycle (owned by the DockRobot action node)

@@ -106,6 +106,45 @@
       </ReactiveFallback>
 
       <!-- ================================================================
+           GUARD 1.7: Localization safety
+           While autonomous motion is active, stop and preserve the coverage
+           cursor if the authoritative GNSS stream goes stale, corrections
+           disappear, or RTK drops out for longer than the configured grace
+           window. This runs BEFORE BoundaryGuard so RTK-float position jumps
+           pause the mower instead of feeding false out-of-boundary recovery.
+
+           Short-circuits while charging/docking, idle, and in operator-driven
+           modes. GPS-only installs default strict; LiDAR-assisted installs can
+           allow longer correction gaps because local sensing can bound drift.
+           ================================================================ -->
+      <ReactiveFallback name="LocalizationSafetyGuard">
+        <IsCharging/>
+        <IsDocking/>
+        <IsCommand command="0"/>
+        <IsCommand command="7"/>
+        <IsCommand command="3"/>
+        <IsCommand command="5"/>
+        <IsCommand command="6"/>
+        <IsCommand command="2"/>
+        <Inverter>
+          <IsLocalizationUnsafe
+              enabled="{localization_safety_enabled}"
+              require_rtk_fixed="{localization_require_rtk_fixed}"
+              max_rtk_float_age_sec="{localization_max_rtk_float_age_sec}"
+              max_corrections_missing_sec="{localization_max_corrections_missing_sec}"
+              max_gnss_status_age_sec="{localization_max_gnss_status_age_sec}"
+              max_msm_age_sec="{localization_max_msm_age_sec}"/>
+        </Inverter>
+        <Sequence name="LocalizationUnsafeHandler">
+          <SetMowerEnabled enabled="false"/>
+          <StopMoving/>
+          <PublishHighLevelStatus state="2" state_name="LOCALIZATION_HOLD"/>
+          <WaitForDuration duration_sec="1.0"/>
+          <AlwaysFailure/>
+        </Sequence>
+      </ReactiveFallback>
+
+      <!-- ================================================================
            GUARD 2: Two-tier boundary violation
              * Lethal violation (outside area by more than
                lethal_boundary_margin_m, default 0.5m in map_server_node):
@@ -279,16 +318,12 @@
              HYSTERESIS band (enter 10 %, resume 95 %) so it never flaps at
              the entry boundary and never resumes mowing on a near-empty pack.
 
-             AUTO-CONTINUE (fixes "stuck after critical charge"): once charged
-             we undock (BackUp) and fall through WITHOUT EndSession /
-             ClearCommand, so current_command stays 1 and MowingSequence
-             resumes coverage from the saved cursor on the very next tick —
-             mirroring BatteryGuard's resume tail. A critical-battery event
-             therefore PAUSES-AND-CONTINUES the run instead of ending it.
-             IsChargingProgressing still guards against a dead charger so we
-             don't wait forever on a broken dock; only a DEAD CHARGER ends the
-             session (CriticalChargerFailed → EndSession) and aborts the branch
-             with FAILURE so the undock/resume tail is skipped.
+             Once charged we PAUSE on the dock and preserve the coverage resume
+             cursor instead of auto-undocking. The next explicit START resumes
+             coverage from the saved cursor. IsChargingProgressing still guards
+             against a dead charger so we don't wait forever on a broken dock;
+             only a DEAD CHARGER ends the session (CriticalChargerFailed →
+             EndSession) and aborts the branch.
              ============================================================ -->
         <Sequence name="CriticalBatteryDock">
           <IsBatteryLow threshold="{battery_critical_pct}" voltage_threshold="{battery_critical_voltage}"/>
@@ -298,6 +333,7 @@
           <SaveObstacles/>
           <ClearCostmap/>
           <Fallback name="CriticalNavOrStop">
+            <IsCharging/>
             <DockRobot dock_id="home_dock" dock_type="simple_charging_dock"/>
             <!-- Docking failed — stay stopped, battery is critical -->
             <Sequence>
@@ -336,15 +372,12 @@
               <AlwaysFailure/>
             </Sequence>
           </Fallback>
-          <!-- Recovered to the resume level — AUTO-CONTINUE. Undock (BackUp,
-               not opennav UndockRobot: isDocked() is fragile with RTK drift at
-               the dock) and fall through WITHOUT EndSession/ClearCommand, so
-               current_command stays 1 and MowingSequence resumes coverage from
-               the saved cursor on the next tick. Mirrors BatteryGuard's tail. -->
-          <IsResumeUndockAllowed max_attempts="3"/>
-          <PublishHighLevelStatus state="2" state_name="RESUMING_UNDOCKING"/>
-          <BackUp backup_dist="{undock_distance}" backup_speed="{undock_speed}"/>
-          <PublishHighLevelStatus state="2" state_name="MOWING"/>
+          <!-- Recovered to the resume level — stay docked and wait for the
+               operator/schedule to send START. PauseCommand clears only the
+               active command and rewrites the resume snapshot, preserving the
+               area cursor instead of wiping it like EndSession. -->
+          <PublishHighLevelStatus state="1" state_name="CHARGING_PAUSED"/>
+          <PauseCommand/>
         </Sequence>
 
         <!-- ============================================================
@@ -588,22 +621,11 @@
                       <AlwaysFailure/>
                     </Sequence>
                   </Fallback>
-                  <IsResumeUndockAllowed max_attempts="3"/>
-                  <PublishHighLevelStatus state="2" state_name="RESUMING_UNDOCKING"/>
-                  <WaitForDuration duration_sec="1.0"/>
-                  <Fallback name="ResumeUndockOrAbort">
-                    <!-- BackUp instead of UndockRobot: opennav_docking isDocked()
-                   uses geometric distance to dock pose which fails with
-                   RTK drift near the dock canopy. BackUp reliably reverses
-                   off the dock via Nav2 behavior_server. -->
-              <BackUp backup_dist="{undock_distance}" backup_speed="{undock_speed}"/>
-                    <Sequence>
-                      <RecordResumeUndockFailure/>
-                      <ClearCommand/>
-                      <AlwaysFailure/>
-                    </Sequence>
-                  </Fallback>
-                  <PublishHighLevelStatus state="2" state_name="MOWING"/>
+                  <!-- Low-battery dock is a pause, not an automatic relaunch.
+                       Charging pins are treated as authoritative "at dock";
+                       preserve the cursor so the next explicit START resumes. -->
+                  <PublishHighLevelStatus state="1" state_name="CHARGING_PAUSED"/>
+                  <PauseCommand/>
                 </Sequence>
               </Fallback>
 

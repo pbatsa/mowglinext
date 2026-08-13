@@ -198,6 +198,21 @@ mowgli:
     datum_lon: 0.000000000     # map origin longitude (set per-site)
     gps_wait_after_undock_sec: 10.0   # wait for RTK fix after undocking
     gps_timeout_sec: 5.0              # pause mowing if no GPS for this long
+    # Behavior-tree GNSS safety gate. When enabled, autonomous mowing/transit
+    # pauses and preserves the coverage resume cursor if RTK/corrections are
+    # degraded longer than these windows. GPS-only installs are strict because
+    # there is no local sensing to bound drift; LiDAR installs may tolerate
+    # longer float/correction gaps.
+    localization_safety_enabled: true
+    localization_require_rtk_fixed_no_lidar: true
+    localization_require_rtk_fixed_with_lidar: false
+    localization_max_rtk_float_age_sec_no_lidar: 2.0
+    localization_max_rtk_float_age_sec_with_lidar: 10.0
+    localization_max_corrections_missing_sec_no_lidar: 3.0
+    localization_max_corrections_missing_sec_with_lidar: 8.0
+    localization_max_gnss_status_age_sec: 2.0
+    localization_max_msm_age_sec_no_lidar: 3.0
+    localization_max_msm_age_sec_with_lidar: 8.0
 
     # NTRIP (RTK correction stream)
     ntrip_enabled: false

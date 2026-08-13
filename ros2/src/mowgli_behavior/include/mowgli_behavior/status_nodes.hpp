@@ -116,6 +116,30 @@ public:
 };
 
 // ---------------------------------------------------------------------------
+// PauseCommand
+// ---------------------------------------------------------------------------
+
+/// Clears only the active high-level command and immediately rewrites the
+/// coverage resume snapshot. Unlike EndSession, this preserves the resume
+/// cursor and completed swaths so charging / localization holds can later
+/// continue the interrupted mow.
+class PauseCommand : public BT::SyncActionNode
+{
+public:
+  PauseCommand(const std::string& name, const BT::NodeConfig& config)
+      : BT::SyncActionNode(name, config)
+  {
+  }
+
+  static BT::PortsList providedPorts()
+  {
+    return {};
+  }
+
+  BT::NodeStatus tick() override;
+};
+
+// ---------------------------------------------------------------------------
 // EndSession
 // ---------------------------------------------------------------------------
 

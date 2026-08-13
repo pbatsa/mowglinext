@@ -48,6 +48,7 @@ void registerAllNodes(BT::BehaviorTreeFactory& factory)
   factory.registerNodeType<IsChargingProgressing>("IsChargingProgressing");
   factory.registerNodeType<PreFlightCheck>("PreFlightCheck");
   factory.registerNodeType<Nav2Active>("Nav2Active");
+  factory.registerNodeType<IsLocalizationUnsafe>("IsLocalizationUnsafe");
   factory.registerNodeType<IsObstacleStuck>("IsObstacleStuck");
   factory.registerNodeType<WasRecentlyInCollisionStop>("WasRecentlyInCollisionStop");
   factory.registerNodeType<IsScanStale>("IsScanStale");
@@ -65,6 +66,7 @@ void registerAllNodes(BT::BehaviorTreeFactory& factory)
   factory.registerNodeType<NavigateInsideBoundary>("NavigateInsideBoundary");
   factory.registerNodeType<BackUp>("BackUp");
   factory.registerNodeType<ClearCommand>("ClearCommand");
+  factory.registerNodeType<PauseCommand>("PauseCommand");
   factory.registerNodeType<EndSession>("EndSession");
   factory.registerNodeType<IncrementSkippedSwaths>("IncrementSkippedSwaths");
   factory.registerNodeType<SaveObstacles>("SaveObstacles");

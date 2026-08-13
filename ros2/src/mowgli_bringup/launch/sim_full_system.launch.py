@@ -195,6 +195,10 @@ def generate_launch_description() -> LaunchDescription:
         parameters=[
             behavior_params,
             {"use_sim_time": True},
+            # The current Webots/simple sim path publishes NavSatFix-style GPS
+            # data for /gps/absolute_pose but does not yet publish the typed
+            # /gps/status stream used by the real Universal GNSS stack.
+            {"localization_safety_enabled": False},
         ],
     )
 

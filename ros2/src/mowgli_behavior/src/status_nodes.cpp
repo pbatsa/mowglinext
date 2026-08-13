@@ -164,6 +164,23 @@ BT::NodeStatus ClearCommand::tick()
   // SeedYawFromMotion to re-drive 1 m forward on the next ReactiveSequence
   // re-tick of UndockOrSkip — even when the dock_yaw seed was already healthy.
   // Use EndSession at the real session boundaries instead.
+  ctx->battery_docking_active = false;
+  return BT::NodeStatus::SUCCESS;
+}
+
+// ---------------------------------------------------------------------------
+// PauseCommand
+// ---------------------------------------------------------------------------
+
+BT::NodeStatus PauseCommand::tick()
+{
+  auto ctx = config().blackboard->get<std::shared_ptr<BTContext>>("context");
+  RCLCPP_INFO(ctx->node->get_logger(),
+              "PauseCommand: clearing active command %u and preserving resume cursor",
+              ctx->current_command);
+  ctx->current_command = 0;
+  ctx->battery_docking_active = false;
+  saveCoverageResumeState(*ctx);
   return BT::NodeStatus::SUCCESS;
 }
 
@@ -183,6 +200,7 @@ BT::NodeStatus EndSession::tick()
               ctx->undock_start_recorded ? "true" : "false",
               ctx->obstacle_backoff_count);
   ctx->yaw_seeded_this_session = false;
+  ctx->battery_docking_active = false;
   ctx->skipped_swaths = 0;
   ctx->undock_start_recorded = false;
   ctx->obstacle_backoff_count = 0;

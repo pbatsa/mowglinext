@@ -241,6 +241,31 @@ def generate_launch_description() -> LaunchDescription:
             # hardcoded 0.5/0.25 and the configured speeds never took effect.
             {"transit_speed": float(robot_params.get("transit_speed", 0.25))},
             {"mowing_speed": float(robot_params.get("mowing_speed", 0.2))},
+            # Autonomous localization safety. GPS-only installs are strict:
+            # stale corrections or RTK Float pause the run and preserve resume.
+            # LiDAR-equipped installs can allow longer gaps because scan
+            # matching/collision monitoring can bound short GPS outages.
+            {"lidar_enabled": ParameterValue(use_lidar, value_type=bool)},
+            {"localization_safety_enabled": bool(
+                robot_params.get("localization_safety_enabled", True))},
+            {"localization_require_rtk_fixed_no_lidar": bool(
+                robot_params.get("localization_require_rtk_fixed_no_lidar", True))},
+            {"localization_require_rtk_fixed_with_lidar": bool(
+                robot_params.get("localization_require_rtk_fixed_with_lidar", False))},
+            {"localization_max_rtk_float_age_sec_no_lidar": float(
+                robot_params.get("localization_max_rtk_float_age_sec_no_lidar", 2.0))},
+            {"localization_max_rtk_float_age_sec_with_lidar": float(
+                robot_params.get("localization_max_rtk_float_age_sec_with_lidar", 10.0))},
+            {"localization_max_corrections_missing_sec_no_lidar": float(
+                robot_params.get("localization_max_corrections_missing_sec_no_lidar", 3.0))},
+            {"localization_max_corrections_missing_sec_with_lidar": float(
+                robot_params.get("localization_max_corrections_missing_sec_with_lidar", 8.0))},
+            {"localization_max_gnss_status_age_sec": float(
+                robot_params.get("localization_max_gnss_status_age_sec", 2.0))},
+            {"localization_max_msm_age_sec_no_lidar": float(
+                robot_params.get("localization_max_msm_age_sec_no_lidar", 3.0))},
+            {"localization_max_msm_age_sec_with_lidar": float(
+                robot_params.get("localization_max_msm_age_sec_with_lidar", 8.0))},
             # mow_angle_deg: operator swath direction. -1 (negative) = AUTO
             # (coverage server picks the swath-count-minimising angle); 0..179 =
             # fixed swath angle in degrees. Read by PlanCoverageArea::buildGoal
