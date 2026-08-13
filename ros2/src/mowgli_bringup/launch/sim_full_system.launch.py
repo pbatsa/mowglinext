@@ -112,6 +112,16 @@ def generate_launch_description() -> LaunchDescription:
         description="Webots execution mode: realtime | fast | pause.",
     )
 
+    gps_quality_pattern_arg = DeclareLaunchArgument(
+        "gps_quality_pattern",
+        default_value="",
+        description=(
+            "Sim-only GNSS quality cycle: duration,REGIME segments separated "
+            "by ';' where REGIME is RTK_FIXED, RTK_FLOAT, or NO_FIX. Empty "
+            "means always RTK_FIXED."
+        ),
+    )
+
     # use_magnetometer comes from mowgli_robot.yaml via navigation.launch.py
     # — no need to declare it here. CLI override still propagates.
     # (There is no use_fusion_graph arg; fusion_graph_node is the sole,
@@ -125,6 +135,7 @@ def generate_launch_description() -> LaunchDescription:
     use_rviz = LaunchConfiguration("use_rviz")
     use_lidar = LaunchConfiguration("use_lidar")
     mode = LaunchConfiguration("mode")
+    gps_quality_pattern = LaunchConfiguration("gps_quality_pattern")
 
     # ------------------------------------------------------------------
     # Config paths
@@ -195,10 +206,15 @@ def generate_launch_description() -> LaunchDescription:
         parameters=[
             behavior_params,
             {"use_sim_time": True},
-            # The current Webots/simple sim path publishes NavSatFix-style GPS
-            # data for /gps/absolute_pose but does not yet publish the typed
-            # /gps/status stream used by the real Universal GNSS stack.
-            {"localization_safety_enabled": False},
+            # sim_navsat_rtk_fix publishes the same /gps/status contract as the
+            # real Universal GNSS stack, so exercise the real localization gate.
+            {"lidar_enabled": ParameterValue(use_lidar, value_type=bool)},
+            {"localization_safety_enabled": True},
+            {"localization_require_rtk_fixed_no_lidar": True},
+            {"localization_max_rtk_float_age_sec_no_lidar": 1.0},
+            {"localization_max_corrections_missing_sec_no_lidar": 1.0},
+            {"localization_max_gnss_status_age_sec": 2.0},
+            {"localization_max_msm_age_sec_no_lidar": 2.0},
         ],
     )
 
@@ -324,7 +340,7 @@ def generate_launch_description() -> LaunchDescription:
                 # the simulator GPS plugin's intrinsic ~2 cm noise). Bias
                 # disabled while debugging fusion_graph; restore the
                 # cycle pattern once the baseline is clean.
-                "quality_pattern": "",
+                "quality_pattern": gps_quality_pattern,
                 "noise_seed": 42,
             }
         ],
@@ -512,6 +528,7 @@ def generate_launch_description() -> LaunchDescription:
             headless_arg,
             use_lidar_arg,
             mode_arg,
+            gps_quality_pattern_arg,
             # Subsystem includes
             simulation_launch,
             navigation_launch,

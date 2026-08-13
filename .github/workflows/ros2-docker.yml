@@ -85,7 +85,9 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           outputs: type=image,name=${{ env.IMAGE_NAME }}${{ matrix.suffix }},push-by-digest=true,name-canonical=true,push=true
           provenance: true
-          sbom: true
+          # The full ROS2 runtime image produces an SBOM larger than GitHub's
+          # attestation upload limit on arm64; keep provenance, skip SBOM.
+          sbom: false
 
       - name: Smoke test runtime image
         run: |

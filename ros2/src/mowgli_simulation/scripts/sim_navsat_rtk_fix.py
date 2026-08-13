@@ -14,6 +14,9 @@ quality regimes:
   RTK_FLOAT  status=SBAS_FIX (1), sigma_xy ~30 cm, Gaussian position noise
   NO_FIX     status=NO_FIX (-1), sigma_xy ~2 m, larger Gaussian noise
 
+Also publishes the typed /gps/status contract used by Universal GNSS so
+behavior_tree_node can exercise the same RTK/correction safety gates in sim.
+
 Gazebo's gz-sim-navsat-system plugin always emits status.status==
 STATUS_FIX (0). Production code (navsat_to_absolute_pose_node,
 slam_pose_anchor_node) gates on STATUS_GBAS_FIX, so without this relay
@@ -55,6 +58,8 @@ from rclpy.qos import (
     QoSProfile,
     ReliabilityPolicy,
 )
+from mowgli_interfaces.msg import GnssStatus
+from std_msgs.msg import Header
 from sensor_msgs.msg import NavSatFix, NavSatStatus
 
 
@@ -155,6 +160,9 @@ class SimNavSatRtkFix(Node):
         self._pub = self.create_publisher(
             NavSatFix, self._output_topic, pub_qos
         )
+        self._status_pub = self.create_publisher(
+            GnssStatus, '/gps/status', pub_qos
+        )
         self._sub = self.create_subscription(
             NavSatFix, self._input_topic, self._on_fix, sub_qos
         )
@@ -244,6 +252,75 @@ class SimNavSatRtkFix(Node):
             NavSatFix.COVARIANCE_TYPE_DIAGONAL_KNOWN
         )
         self._pub.publish(out)
+        self._status_pub.publish(
+            self._status_msg(msg.header, regime, sigma_xy, sigma_z)
+        )
+
+    @staticmethod
+    def _status_msg(
+        header: Header, regime: str, sigma_xy: float, sigma_z: float
+    ) -> GnssStatus:
+        status = GnssStatus()
+        status.header.stamp = header.stamp
+        status.header.frame_id = 'gps_link'
+        status.backend = 'sim'
+        status.receiver_vendor = 'mowgli_simulation'
+        status.receiver_model = 'sim_navsat_rtk_fix'
+        status.receiver_firmware = ''
+        status.dead_reckoning = False
+        status.dual_antenna_heading = False
+        status.interference_detected = False
+        status.jamming_detected = False
+        status.horizontal_accuracy_m = float(sigma_xy)
+        status.vertical_accuracy_m = float(sigma_z)
+        status.satellites_used = 24 if regime != 'NO_FIX' else 0
+        status.satellites_visible = status.satellites_used
+        status.satellites_tracked = status.satellites_used
+        status.msm_summary_seen = regime != 'NO_FIX'
+        status.msm_summary_decoded = regime != 'NO_FIX'
+        status.msm_summary_valid = regime != 'NO_FIX'
+        status.msm_summary_message_type = 1124
+        status.msm_summary_station_id = 1
+        status.msm_summary_constellations_seen = (
+            'gps,glonass,galileo,beidou' if regime != 'NO_FIX' else ''
+        )
+        status.msm_summary_satellite_count = status.satellites_used
+        status.msm_summary_signal_count = 1 if regime != 'NO_FIX' else 0
+        status.msm_summary_cell_count = status.satellites_used
+        status.msm_summary_age_s = 0.0 if regime != 'NO_FIX' else 999.0
+
+        if regime == 'RTK_FIXED':
+            status.fix_type = GnssStatus.FIX_TYPE_RTK_FIXED
+            status.fix_valid = True
+            status.differential_corrections = True
+            status.corrections_active = True
+            status.rtk_mode = GnssStatus.RTK_MODE_FIXED
+            status.quality_percent = 100.0
+            status.correction_stream_status = (
+                GnssStatus.CORRECTION_STREAM_STATUS_ACTIVE
+            )
+        elif regime == 'RTK_FLOAT':
+            status.fix_type = GnssStatus.FIX_TYPE_RTK_FLOAT
+            status.fix_valid = True
+            status.differential_corrections = True
+            status.corrections_active = True
+            status.rtk_mode = GnssStatus.RTK_MODE_FLOAT
+            status.quality_percent = 70.0
+            status.correction_stream_status = (
+                GnssStatus.CORRECTION_STREAM_STATUS_ACTIVE
+            )
+        else:
+            status.fix_type = GnssStatus.FIX_TYPE_NO_FIX
+            status.fix_valid = False
+            status.differential_corrections = False
+            status.corrections_active = False
+            status.rtk_mode = GnssStatus.RTK_MODE_NONE
+            status.quality_percent = 0.0
+            status.correction_stream_status = (
+                GnssStatus.CORRECTION_STREAM_STATUS_UNAVAILABLE
+            )
+
+        return status
 
     def _log_stats(self) -> None:
         total = sum(self._regime_counts.values())
