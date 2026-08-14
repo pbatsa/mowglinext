@@ -43,11 +43,13 @@
 #include "behaviortree_cpp/bt_factory.h"
 #include "mowgli_behavior/bt_context.hpp"
 #include "mowgli_behavior/condition_nodes.hpp"
+#include "mowgli_behavior/docking_nodes.hpp"
 #include "mowgli_behavior/status_nodes.hpp"
 #include <gtest/gtest.h>
 
 using mowgli_behavior::BTContext;
 using mowgli_behavior::ClearCommand;
+using mowgli_behavior::DockRobot;
 using mowgli_behavior::EndSession;
 using mowgli_behavior::IsBatteryAbove;
 using mowgli_behavior::NeedsDocking;
@@ -151,6 +153,24 @@ TEST_F(CriticalBatteryDockNavTest, NotChargingAttemptsDockRobot)
   EXPECT_EQ(tree.tickOnce(), BT::NodeStatus::SUCCESS);
 
   EXPECT_EQ(dock_attempts, 1);
+}
+
+TEST(DockRobotChargingTest, AlreadyChargingSucceedsWithoutActionServer)
+{
+  auto ctx = std::make_shared<BTContext>();
+  ctx->node = rclcpp::Node::make_shared("test_dock_robot_already_charging");
+  ctx->latest_power.charger_enabled = true;
+  ctx->docking_active = true;
+
+  auto blackboard = BT::Blackboard::create();
+  blackboard->set("context", ctx);
+
+  BT::NodeConfig config;
+  config.blackboard = blackboard;
+
+  DockRobot dock_robot("DockRobot", config);
+  EXPECT_EQ(dock_robot.executeTick(), BT::NodeStatus::SUCCESS);
+  EXPECT_FALSE(ctx->docking_active);
 }
 
 // ---------------------------------------------------------------------------
