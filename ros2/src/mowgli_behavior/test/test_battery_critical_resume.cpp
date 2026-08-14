@@ -46,11 +46,13 @@
 #include "behaviortree_cpp/bt_factory.h"
 #include "mowgli_behavior/bt_context.hpp"
 #include "mowgli_behavior/condition_nodes.hpp"
+#include "mowgli_behavior/docking_nodes.hpp"
 #include "mowgli_behavior/status_nodes.hpp"
 #include <gtest/gtest.h>
 
 using mowgli_behavior::BTContext;
 using mowgli_behavior::ClearCommand;
+using mowgli_behavior::DockRobot;
 using mowgli_behavior::EndSession;
 using mowgli_behavior::IsBatteryAbove;
 using mowgli_behavior::IsResumeUndockAllowed;
@@ -78,12 +80,104 @@ public:
 ::testing::Environment* const rclcpp_env =
     ::testing::AddGlobalTestEnvironment(new RclcppEnvironment());
 
+// Charging pins are a physical dock signal. If they are already engaged, the
+// critical-battery branch must skip DockRobot and move straight into the charge
+// hold instead of trying to navigate while sitting on the dock.
 // ---------------------------------------------------------------------------
-// Fixture — mirrors the tail of CriticalBatteryDock (charge-hold + branch).
+
+class CriticalBatteryDockNavTest : public ::testing::Test
+{
+protected:
+  BT::BehaviorTreeFactory factory;
+  BT::Blackboard::Ptr blackboard;
+
+  bool is_charging = false;
+  int dock_attempts = 0;
+
+  void SetUp() override
+  {
+    blackboard = BT::Blackboard::create();
+
+    factory.registerSimpleCondition("IsCharging",
+                                    [this](BT::TreeNode&)
+                                    {
+                                      return is_charging ? BT::NodeStatus::SUCCESS
+                                                         : BT::NodeStatus::FAILURE;
+                                    });
+    factory.registerSimpleAction("DockRobot",
+                                 [this](BT::TreeNode&)
+                                 {
+                                   ++dock_attempts;
+                                   return BT::NodeStatus::SUCCESS;
+                                 });
+    factory.registerSimpleAction("CriticalBatteryNavFailed",
+                                 [](BT::TreeNode&)
+                                 {
+                                   return BT::NodeStatus::SUCCESS;
+                                 });
+  }
+
+  BT::Tree makeTree()
+  {
+    static const char* xml = R"(
+      <root BTCPP_format="4">
+        <BehaviorTree ID="MainTree">
+          <Fallback name="CriticalNavOrStop">
+            <IsCharging/>
+            <DockRobot/>
+            <CriticalBatteryNavFailed/>
+          </Fallback>
+        </BehaviorTree>
+      </root>
+    )";
+    return factory.createTreeFromText(xml, blackboard);
+  }
+};
+
+TEST_F(CriticalBatteryDockNavTest, AlreadyChargingSkipsDockRobot)
+{
+  is_charging = true;
+
+  auto tree = makeTree();
+  EXPECT_EQ(tree.tickOnce(), BT::NodeStatus::SUCCESS);
+
+  EXPECT_EQ(dock_attempts, 0);
+}
+
+TEST_F(CriticalBatteryDockNavTest, NotChargingAttemptsDockRobot)
+{
+  is_charging = false;
+
+  auto tree = makeTree();
+  EXPECT_EQ(tree.tickOnce(), BT::NodeStatus::SUCCESS);
+
+  EXPECT_EQ(dock_attempts, 1);
+}
+
+TEST(DockRobotChargingTest, AlreadyChargingSucceedsWithoutActionServer)
+{
+  auto ctx = std::make_shared<BTContext>();
+  ctx->node = rclcpp::Node::make_shared("test_dock_robot_already_charging");
+  ctx->latest_power.charger_enabled = true;
+  ctx->docking_active = true;
+
+  auto blackboard = BT::Blackboard::create();
+  blackboard->set("context", ctx);
+
+  BT::NodeConfig config;
+  config.blackboard = blackboard;
+
+  DockRobot dock_robot("DockRobot", config);
+  EXPECT_EQ(dock_robot.executeTick(), BT::NodeStatus::SUCCESS);
+  EXPECT_FALSE(ctx->docking_active);
+}
+
+// ---------------------------------------------------------------------------
+// Fixture — mirrors the tail of CriticalBatteryDock (charge-hold + pause).
 //
-// A returned SUCCESS means the recovery/undock tail ran; FAILURE means the
-// charger-failed abort ran (undock tail skipped). ChargingProgress and
-// UndockMarker are stand-ins we control / observe; every other node is real.
+// A returned SUCCESS means the recovery pause ran; FAILURE means the
+// charger-failed abort ran. ChargingProgress is the only stand-in we control;
+// every other node is real.
 // ---------------------------------------------------------------------------
 
 class CriticalBatteryResumeTest : public ::testing::Test

@@ -15,10 +15,24 @@
 
 #include "mowgli_behavior/docking_nodes.hpp"
 
+#include <memory>
+#include <mutex>
+
 #include "action_msgs/msg/goal_status.hpp"
 
 namespace mowgli_behavior
 {
+
+namespace
+{
+
+bool isChargerEnabled(const std::shared_ptr<BTContext>& ctx)
+{
+  std::lock_guard<std::mutex> lock(ctx->context_mutex);
+  return ctx->latest_power.charger_enabled;
+}
+
+}  // namespace
 
 // ---------------------------------------------------------------------------
 // DockRobot
@@ -27,6 +41,13 @@ namespace mowgli_behavior
 BT::NodeStatus DockRobot::onStart()
 {
   auto ctx = config().blackboard->get<std::shared_ptr<BTContext>>("context");
+
+  if (isChargerEnabled(ctx))
+  {
+    ctx->docking_active = false;
+    RCLCPP_INFO(ctx->node->get_logger(), "DockRobot: already charging; accepting docked state");
+    return BT::NodeStatus::SUCCESS;
+  }
 
   std::string dock_id = "home_dock";
   if (auto res = getInput<std::string>("dock_id"))
@@ -75,6 +96,25 @@ BT::NodeStatus DockRobot::onStart()
 BT::NodeStatus DockRobot::onRunning()
 {
   auto ctx = config().blackboard->get<std::shared_ptr<BTContext>>("context");
+
+  if (isChargerEnabled(ctx))
+  {
+    ctx->docking_active = false;
+    if (goal_handle_ && action_client_)
+    {
+      RCLCPP_INFO(ctx->node->get_logger(),
+                  "DockRobot: charging detected while docking; canceling goal and accepting docked "
+                  "state");
+      action_client_->async_cancel_goal(goal_handle_);
+      goal_handle_.reset();
+    }
+    else
+    {
+      RCLCPP_INFO(ctx->node->get_logger(),
+                  "DockRobot: charging detected while docking; accepting docked state");
+    }
+    return BT::NodeStatus::SUCCESS;
+  }
 
   if (!goal_handle_)
   {

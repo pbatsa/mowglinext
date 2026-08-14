@@ -409,6 +409,7 @@ if(BUILD_TESTING)
   ament_add_gtest(test_battery_critical_resume
     test/test_battery_critical_resume.cpp
     src/condition_nodes.cpp
+    src/docking_nodes.cpp
     src/status_nodes.cpp
     src/coverage_persistence.cpp
   )
@@ -420,6 +421,7 @@ if(BUILD_TESTING)
 
   ament_target_dependencies(test_battery_critical_resume
     rclcpp
+    rclcpp_action
     behaviortree_cpp
     mowgli_interfaces
     nav2_msgs
@@ -430,6 +432,7 @@ if(BUILD_TESTING)
     tf2
     tf2_ros
     tf2_geometry_msgs
+    action_msgs
   )
 
 endif()
