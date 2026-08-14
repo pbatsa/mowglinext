@@ -221,3 +221,32 @@ TEST_F(GetNextUnmowedAreaTest, SelectsMowingAreaAtIndexZero)
   EXPECT_EQ(selected, 0u);
   EXPECT_EQ(ctx->current_area, 0);
 }
+
+// Regression from field testing: area 0 was interrupted several times while
+// driving deeper into one long continuous sub-path. The completed-unit count
+// stayed at 3, but the resume cursor advanced from ~80 % to ~86 %. That is real
+// progress and must reset the no-progress attempt counter instead of abandoning
+// the area and jumping to the next mowing area.
+TEST_F(GetNextUnmowedAreaTest, ResumeCursorProgressPreventsAttemptedSkip)
+{
+  areas[0] = {"lawn", /*is_navigation_area=*/false};
+  waitForService();
+
+  ctx->area_completed_swaths[0] = {0, 1, 2};
+  ctx->area_swath_count[0] = 4;
+  ctx->area_path_pose_count[0] = 1000;
+
+  for (std::size_t cursor : {800u, 820u, 840u, 860u, 880u, 900u})
+  {
+    ctx->area_resume_pose_index[0] = cursor;
+
+    auto tree = makeTree(/*max_areas=*/5);
+    EXPECT_EQ(tickToCompletion(tree), BT::NodeStatus::SUCCESS);
+
+    uint32_t selected = 99;
+    ASSERT_TRUE(blackboard->get("area_index", selected));
+    EXPECT_EQ(selected, 0u);
+    EXPECT_EQ(ctx->attempted_areas.count(0u), 0u);
+    EXPECT_EQ(ctx->area_attempt_count[0], 1u);
+  }
+}

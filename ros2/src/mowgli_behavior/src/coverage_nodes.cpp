@@ -1555,10 +1555,11 @@ BT::NodeStatus GetNextUnmowedArea::processResponse()
 
   // Area has remaining work. Guard against an area that can never finish
   // (e.g. every swath aborts): count CONSECUTIVE dispatches that added no
-  // newly-completed swath toward kMaxAreaAttempts. The high-water mark is
-  // the size of ctx->area_completed_swaths[area] — if it grew since the last
-  // dispatch, the previous FollowStrip pass mowed at least one more swath, so
-  // reset the counter. This replaces the old cell-coverage-percent high-water.
+  // coverage progress toward kMaxAreaAttempts. Progress is the higher of
+  // completed-unit percent and continuous resume-cursor percent. The latter is
+  // important for long sub-paths: a mower can make real progress inside one
+  // unit across several interrupted retries before any new unit is fully marked
+  // complete.
   std::size_t done_swaths = 0;
   {
     auto it = ctx->area_completed_swaths.find(current_area_idx_);
@@ -1567,13 +1568,33 @@ BT::NodeStatus GetNextUnmowedArea::processResponse()
       done_swaths = it->second.size();
     }
   }
+  std::size_t total_swaths = 0;
+  {
+    auto it = ctx->area_swath_count.find(current_area_idx_);
+    if (it != ctx->area_swath_count.end())
+    {
+      total_swaths = it->second;
+    }
+  }
+  const float done_pct =
+      total_swaths > 0 ? 100.0f * static_cast<float>(done_swaths) / static_cast<float>(total_swaths)
+                       : static_cast<float>(done_swaths);
+  float resume_pct = 0.0f;
+  auto resume_it = ctx->area_resume_pose_index.find(current_area_idx_);
+  auto pose_count_it = ctx->area_path_pose_count.find(current_area_idx_);
+  if (resume_it != ctx->area_resume_pose_index.end() &&
+      pose_count_it != ctx->area_path_pose_count.end())
+  {
+    resume_pct = coveragePercentFromCursor(resume_it->second, pose_count_it->second);
+  }
+  const float progress_pct = std::max(done_pct, resume_pct);
   auto& n = ctx->area_attempt_count[current_area_idx_];
   auto last_it = ctx->area_last_coverage.find(current_area_idx_);
   const bool made_progress = (last_it == ctx->area_last_coverage.end()) ||
-                             (static_cast<float>(done_swaths) > last_it->second + 0.5f);
+                             (progress_pct > last_it->second + BTContext::kAreaProgressEpsilonPct);
   if (made_progress)
   {
-    ctx->area_last_coverage[current_area_idx_] = static_cast<float>(done_swaths);
+    ctx->area_last_coverage[current_area_idx_] = progress_pct;
     n = 0;
   }
   n++;
@@ -1582,10 +1603,11 @@ BT::NodeStatus GetNextUnmowedArea::processResponse()
     ctx->attempted_areas.insert(current_area_idx_);
     RCLCPP_WARN(ctx->node->get_logger(),
                 "GetNextUnmowedArea: area %u hit max attempts (%u), giving up with "
-                "%zu swath(s) completed",
+                "%zu swath(s) completed, %.1f%% progress",
                 current_area_idx_,
                 n,
-                done_swaths);
+                done_swaths,
+                progress_pct);
     return advanceAndProbe();
   }
 
@@ -1593,9 +1615,10 @@ BT::NodeStatus GetNextUnmowedArea::processResponse()
   ctx->current_area = static_cast<int>(current_area_idx_);
   RCLCPP_INFO(ctx->node->get_logger(),
               "GetNextUnmowedArea: area %u selected (%zu swath(s) done so far) "
-              "— dispatch attempt %u/%u",
+              "— %.1f%% progress, dispatch attempt %u/%u",
               current_area_idx_,
               done_swaths,
+              progress_pct,
               n,
               BTContext::kMaxAreaAttempts);
   return BT::NodeStatus::SUCCESS;
