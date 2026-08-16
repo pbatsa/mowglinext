@@ -386,6 +386,9 @@ def generate_launch_description() -> LaunchDescription:
     # a side-mounted blade on the cut side. Injected into coverage_server's
     # ring_direction param below.
     mow_direction = 0
+    # Swath drive order. "serpentine" preserves adjacent-row mowing; "skip_row"
+    # cuts every other row first so end turns are wider and easier on turf.
+    swath_order_mode = "serpentine"
     # swath_overlap: how much narrower F2C's swath spacing is than the physical
     # cut width. F2C's operation_width (Robot::setCovWidth) = tool_width −
     # swath_overlap, so adjacent swaths OVERLAP by this much. tool_width itself
@@ -528,6 +531,7 @@ def generate_launch_description() -> LaunchDescription:
         num_headland_passes = int(rt_rp.get(
             "num_headland_passes", num_headland_passes))
         mow_direction = int(rt_rp.get("mow_direction", mow_direction))
+        swath_order_mode = str(rt_rp.get("swath_order_mode", swath_order_mode))
         swath_overlap = float(rt_rp.get("swath_overlap", swath_overlap))
         min_turning_radius = float(rt_rp.get(
             "min_turning_radius", min_turning_radius))
@@ -829,6 +833,7 @@ def generate_launch_description() -> LaunchDescription:
         cov_params["num_headland_passes"] = num_headland_passes
         # Perimeter/headland travel winding (blade-side, issue #335).
         cov_params["ring_direction"] = mow_direction
+        cov_params["swath_order_mode"] = swath_order_mode
         cov_params["chassis_safety_inset"] = chassis_safety_inset
         # Extra buffer grown around drawn map-obstacle polygons (holes) before
         # swath planning — keeps the robot off root zones the 2D LiDAR cannot

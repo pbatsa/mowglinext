@@ -528,6 +528,7 @@ def test_coverage_server_geometry_aligned_across_variants() -> None:
         "default_headland_width",
         "num_headland_passes",
         "min_swath_length",
+        "swath_order_mode",
     ):
         assert lp.get(k) == np_.get(k), (
             f"coverage_server.{k} differs across variants: "

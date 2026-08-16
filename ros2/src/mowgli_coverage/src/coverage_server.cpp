@@ -49,6 +49,12 @@ nav2_util::CallbackReturn CoverageServer::on_configure(const rclcpp_lifecycle::S
       declare_parameter<int>(name, def);
     return static_cast<int>(get_parameter(name).as_int());
   };
+  auto declare_string = [this](const std::string& name, const std::string& def)
+  {
+    if (!has_parameter(name))
+      declare_parameter<std::string>(name, def);
+    return get_parameter(name).as_string();
+  };
 
   robot_width_ = declare_double("robot_width", 0.40);
   operation_width_ = declare_double("operation_width", 0.18);
@@ -61,6 +67,9 @@ nav2_util::CallbackReturn CoverageServer::on_configure(const rclcpp_lifecycle::S
   // Perimeter/headland travel winding (#335): 0 = planner default (F2C natural),
   // 1 = clockwise, 2 = counter-clockwise. Read live in planCoverage.
   declare_int("ring_direction", 0);
+  // Swath drive order: "serpentine" = current adjacent-row order, "skip_row" =
+  // every other row first for wider end turns. Read live in planCoverage.
+  declare_string("swath_order_mode", "serpentine");
   // Hard floor on every turn-around / fillet arc in the continuous path: the
   // robot's minimum MPPI-trackable turning radius (mowgli_robot.yaml). Read live
   // in planCoverage so it can be field-tuned between plans.
@@ -400,6 +409,7 @@ void CoverageServer::planCoverage()
     // Perimeter/headland travel winding (#335): 0 = planner default, 1 = CW,
     // 2 = CCW. Read live so it is field-tunable per plan.
     const int ring_direction = static_cast<int>(get_parameter("ring_direction").as_int());
+    const std::string swath_order_mode = get_parameter("swath_order_mode").as_string();
     const double mow_angle_rad =
         (goal->mow_angle_deg < 0.0) ? -1.0 : goal->mow_angle_deg * M_PI / 180.0;
 
@@ -442,7 +452,8 @@ void CoverageServer::planCoverage()
                                                mow_angle_rad,
                                                min_swath_length,
                                                ring_direction,
-                                               min_turning_radius);
+                                               min_turning_radius,
+                                               swath_order_mode);
     const double plan_ms = 1e3 * (now() - t_plan0).seconds();
 
     // Instrumentation (no behaviour change): surface every piece the planner

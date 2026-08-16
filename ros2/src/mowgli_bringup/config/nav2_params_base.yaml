@@ -1127,6 +1127,9 @@ coverage_server:
     # Drop straight swaths shorter than this (m) — a sliver clip from a
     # concave notch isn't worth an in-place pivot. Read LIVE per plan.
     min_swath_length: 0.15
+    # Swath drive order. "serpentine" preserves adjacent rows; "skip_row" drives
+    # every other row first, then returns for the skipped rows.
+    swath_order_mode: serpentine
 
 # ---------------------------------------------------------------------------
 # Lifecycle manager

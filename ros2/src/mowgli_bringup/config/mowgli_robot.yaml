@@ -264,6 +264,11 @@ mowgli:
     # side-mounted blade stays on the cut side. navigation.launch.py injects this
     # into coverage_server.ring_direction; swaths/connectors follow the rings.
     mow_direction: 0
+    # swath_order_mode: "serpentine" = adjacent-row mowing; "skip_row" = mow
+    # every other row first, then return for the skipped rows. Skip-row widens
+    # each end turn and should be easier on turf, at the cost of less direct
+    # coverage ordering.
+    swath_order_mode: serpentine
     # chassis_safety_inset: how far INSIDE the recorded boundary the OUTERMOST
     # headland ring's centerline sits. 0.0 (default) = the ring rides ON the
     # recorded line — the perimeter the operator drove — so the blade mows to the

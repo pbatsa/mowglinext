@@ -729,9 +729,22 @@ BoustrophedonPlan planBoustrophedon(const f2c::types::Cell& field_cell,
                                     double mow_angle_rad,
                                     double min_swath_length,
                                     int ring_direction,
-                                    double min_turn_radius)
+                                    double min_turn_radius,
+                                    const std::string& swath_order_mode)
 {
   BoustrophedonPlan plan;
+  plan.swath_order_mode = (swath_order_mode == "skip_row" || swath_order_mode == "skip-row")
+                              ? "skip_row"
+                              : "serpentine";
+  if (plan.swath_order_mode == "skip_row")
+  {
+    plan.diagnostics.notes.push_back("swath-order: skip_row");
+  }
+  else if (!swath_order_mode.empty() && swath_order_mode != "serpentine")
+  {
+    plan.diagnostics.notes.push_back("swath-order: unknown mode '" + swath_order_mode +
+                                     "', using serpentine");
+  }
   // Polygon area the planned-coverage fraction is taken over (the operator's
   // authorised area, before any inset). Instrumentation only.
   plan.diagnostics.field_area = field_cell.area();
@@ -1363,7 +1376,8 @@ std::vector<std::vector<std::pair<double, double>>> buildContinuousSubPaths(
     segs.push_back(std::move(loop));
   }
 
-  // Nearest-endpoint chaining of the swath pieces. BoustrophedonOrder's
+  // Drive-order chaining of the swath pieces. In the default mode this is
+  // nearest-endpoint chaining: BoustrophedonOrder's
   // serpentine interleaves the pieces of a sweep line that a concave bite (or a
   // hole) split — below,above,below,above… — which forced one field-crossing
   // blade-on join PER COLUMN through/around the bite (user report: "the plan
@@ -1372,11 +1386,25 @@ std::vector<std::vector<std::pair<double, double>>> buildContinuousSubPaths(
   // piece IS the adjacent swath, entered at the near end), but on a split field
   // it mows each lobe contiguously and leaves ONE long hop per lobe change —
   // which the join-gap split below turns into a single blade-off Nav2 transit.
-  // Deterministic for a fixed plan (greedy from a fixed seed). O(n²), n = a few
-  // hundred swaths at most.
+  // Deterministic for a fixed plan (greedy from a fixed seed). In skip_row mode,
+  // the row index order is fixed as 0,2,4… then 1,3,5… while each swath direction
+  // is still flipped toward the nearest endpoint. O(n²), n = a few hundred
+  // swaths at most (O(n) for skip_row).
   std::vector<std::pair<std::pair<double, double>, std::pair<double, double>>> ordered_swaths;
   {
     const auto& sw_in = plan.swaths;
+    std::vector<std::size_t> visit_order;
+    visit_order.reserve(sw_in.size());
+    if (plan.swath_order_mode == "skip_row")
+    {
+      for (std::size_t offset = 0; offset < 2; ++offset)
+      {
+        for (std::size_t i = offset; i < sw_in.size(); i += 2)
+        {
+          visit_order.push_back(i);
+        }
+      }
+    }
     std::vector<bool> used(sw_in.size(), false);
     // Seed from BoustrophedonOrder's OWN first swath, NOT from the last ring's
     // end. Seeding from the ring end couples the serpentine direction to where
@@ -1393,11 +1421,13 @@ std::vector<std::vector<std::pair<double, double>>> buildContinuousSubPaths(
     ordered_swaths.reserve(sw_in.size());
     for (std::size_t n = 0; n < sw_in.size(); ++n)
     {
-      std::size_t best = sw_in.size();
+      std::size_t best = (plan.swath_order_mode == "skip_row") ? visit_order[n] : sw_in.size();
       bool flip = false;
       double best_d = std::numeric_limits<double>::max();
-      for (std::size_t i = 0; i < sw_in.size(); ++i)
+      const std::size_t search_count = (plan.swath_order_mode == "skip_row") ? 1u : sw_in.size();
+      for (std::size_t k = 0; k < search_count; ++k)
       {
+        const std::size_t i = (plan.swath_order_mode == "skip_row") ? best : k;
         if (used[i])
         {
           continue;

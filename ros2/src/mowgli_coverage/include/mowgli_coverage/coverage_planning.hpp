@@ -73,6 +73,10 @@ struct BoustrophedonPlan
   std::vector<std::pair<std::pair<double, double>, std::pair<double, double>>> swaths;
   // Swath heading actually used (rad, map frame) — for logging.
   double swath_angle_rad = 0.0;
+  // Swath drive-order mode. "serpentine" preserves the normal adjacent-row
+  // order; "skip_row" drives every other row first, then returns for the
+  // skipped rows so end turns are wider and gentler.
+  std::string swath_order_mode{"serpentine"};
   // Closed outer ring of the chassis-safety-inset field (the SAME inset the
   // rings/swaths are planned against, == generateHeadlands(field, inset)). The
   // continuous-path connectors and corner fillets MUST stay inside THIS ring,
@@ -153,7 +157,8 @@ BoustrophedonPlan planBoustrophedon(const f2c::types::Cell& field_cell,
                                     double mow_angle_rad,
                                     double min_swath_length,
                                     int ring_direction = 0,
-                                    double min_turn_radius = 0.15);
+                                    double min_turn_radius = 0.15,
+                                    const std::string& swath_order_mode = "serpentine");
 
 // Flatten a BoustrophedonPlan into ONE continuous, cusp-free, in-bounds
 // polyline so an MPPI-class sampling controller can track it without the

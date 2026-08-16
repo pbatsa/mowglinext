@@ -71,6 +71,33 @@ double swathYaw(const std::pair<std::pair<double, double>, std::pair<double, dou
   return std::atan2(s.second.second - s.first.second, s.second.first - s.first.first);
 }
 
+std::size_t firstVerticalRunAtX(const std::vector<std::pair<double, double>>& path, double x)
+{
+  constexpr double kXTol = 0.03;
+  constexpr double kMinSpan = 0.8;
+  for (std::size_t i = 0; i < path.size(); ++i)
+  {
+    if (std::fabs(path[i].first - x) > kXTol)
+    {
+      continue;
+    }
+    double min_y = path[i].second;
+    double max_y = path[i].second;
+    std::size_t j = i;
+    while (j < path.size() && std::fabs(path[j].first - x) <= kXTol)
+    {
+      min_y = std::min(min_y, path[j].second);
+      max_y = std::max(max_y, path[j].second);
+      ++j;
+    }
+    if (max_y - min_y >= kMinSpan)
+    {
+      return i;
+    }
+  }
+  return std::numeric_limits<std::size_t>::max();
+}
+
 double wrapAngle(double a)
 {
   while (a > M_PI)
@@ -307,6 +334,29 @@ TEST(CoveragePlanning, SquareSwathsAreSerpentine)
                                   plan.swaths[i].first.second - plan.swaths[i - 1].second.second);
     EXPECT_LT(hop, 3 * 0.16) << "swaths " << i - 1 << "→" << i << " hop too far";
   }
+}
+
+// Skip-row mode keeps the row index order 0,2,4… then 1,3,5… while still
+// flipping each row toward the nearest endpoint. This is the field-test mode
+// for wider, gentler end turns.
+TEST(CoveragePlanning, SkipRowOrdersEveryOtherSwathFirst)
+{
+  BoustrophedonPlan plan;
+  plan.swath_order_mode = "skip_row";
+  plan.swaths = {{{0.0, 0.0}, {0.0, 2.0}},
+                 {{1.0, 2.0}, {1.0, 0.0}},
+                 {{2.0, 0.0}, {2.0, 2.0}},
+                 {{3.0, 2.0}, {3.0, 0.0}},
+                 {{4.0, 0.0}, {4.0, 2.0}}};
+  plan.safe_boundary = {{-1.0, -1.0}, {5.0, -1.0}, {5.0, 3.0}, {-1.0, 3.0}, {-1.0, -1.0}};
+
+  const auto subs = buildContinuousSubPaths(plan, plan.safe_boundary, 0.18, 0.15, 0.05);
+  ASSERT_FALSE(subs.empty());
+  const std::size_t x2 = firstVerticalRunAtX(subs.front(), 2.0);
+  const std::size_t x1 = firstVerticalRunAtX(subs.front(), 1.0);
+  ASSERT_NE(x2, std::numeric_limits<std::size_t>::max());
+  ASSERT_NE(x1, std::numeric_limits<std::size_t>::max());
+  EXPECT_LT(x2, x1) << "skip_row should drive row 2 before returning for skipped row 1";
 }
 
 // A fixed mow angle is honoured and the plan is deterministic across calls
