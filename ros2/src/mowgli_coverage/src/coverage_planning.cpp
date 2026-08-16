@@ -1310,7 +1310,9 @@ std::vector<std::vector<std::pair<double, double>>> buildContinuousSubPaths(
     }
   }
 
+  constexpr int kNoSwathIndex = -1;
   std::vector<std::vector<std::pair<double, double>>> segs;
+  std::vector<int> seg_swath_indices;
   for (const std::size_t ring_idx : ring_order)
   {
     const auto& loop_in = plan.rings[ring_idx];
@@ -1374,6 +1376,7 @@ std::vector<std::vector<std::pair<double, double>>> buildContinuousSubPaths(
       loop.push_back(loop.front());
     }
     segs.push_back(std::move(loop));
+    seg_swath_indices.push_back(kNoSwathIndex);
   }
 
   // Drive-order chaining of the swath pieces. In the default mode this is
@@ -1390,7 +1393,12 @@ std::vector<std::vector<std::pair<double, double>>> buildContinuousSubPaths(
   // the row index order is fixed as 0,2,4… then 1,3,5… while each swath direction
   // is still flipped toward the nearest endpoint. O(n²), n = a few hundred
   // swaths at most (O(n) for skip_row).
-  std::vector<std::pair<std::pair<double, double>, std::pair<double, double>>> ordered_swaths;
+  struct OrderedSwath
+  {
+    std::pair<std::pair<double, double>, std::pair<double, double>> segment;
+    std::size_t source_index{0};
+  };
+  std::vector<OrderedSwath> ordered_swaths;
   {
     const auto& sw_in = plan.swaths;
     std::vector<std::size_t> visit_order;
@@ -1456,11 +1464,12 @@ std::vector<std::vector<std::pair<double, double>>> buildContinuousSubPaths(
         std::swap(sw.first, sw.second);
       }
       cur = sw.second;
-      ordered_swaths.push_back(sw);
+      ordered_swaths.push_back({sw, best});
     }
   }
-  for (const auto& sw : ordered_swaths)
+  for (const auto& ordered_swath : ordered_swaths)
   {
+    const auto& sw = ordered_swath.segment;
     std::vector<std::pair<double, double>> pts;
     densifySegmentStep(
         sw.first.first, sw.first.second, sw.second.first, sw.second.second, step, pts);
@@ -1468,6 +1477,7 @@ std::vector<std::vector<std::pair<double, double>>> buildContinuousSubPaths(
     if (pts.size() >= 2)
     {
       segs.push_back(std::move(pts));
+      seg_swath_indices.push_back(static_cast<int>(ordered_swath.source_index));
     }
   }
 
@@ -1530,19 +1540,33 @@ std::vector<std::vector<std::pair<double, double>>> buildContinuousSubPaths(
       // one-hole field carried an extra ring→swath transit. kSegmentTransitGapM
       // remains the BT-side FollowStrip threshold for classifying the gaps BETWEEN
       // the sub-paths this function emits; it no longer drives the split decision.
+      bool split_before_connector = false;
+      if (plan.swath_order_mode == "skip_row" && i < seg_swath_indices.size())
+      {
+        const int prev_swath = seg_swath_indices[i - 1];
+        const int next_swath = seg_swath_indices[i];
+        const int row_delta =
+            prev_swath > next_swath ? prev_swath - next_swath : next_swath - prev_swath;
+        split_before_connector =
+            prev_swath != kNoSwathIndex && next_swath != kNoSwathIndex && row_delta > 1;
+      }
+
       bool conn_safe = false;
       {
         bool fallback = false;
-        auto conn = buildConnector(
-            start, goal, boundary, plan.safe_holes, turn_radius, min_radius, step, fallback);
-        conn_safe =
-            !conn.empty() &&
-            (!fallback || (allInside(conn, boundary) && clearOfHoles(conn, plan.safe_holes)));
-        if (conn_safe)
+        if (!split_before_connector)
         {
-          // conn is start-inclusive (== path.back()) / goal-exclusive; drop the
-          // duplicate start so the polyline stays simple.
-          path.insert(path.end(), conn.begin() + 1, conn.end());
+          auto conn = buildConnector(
+              start, goal, boundary, plan.safe_holes, turn_radius, min_radius, step, fallback);
+          conn_safe =
+              !conn.empty() &&
+              (!fallback || (allInside(conn, boundary) && clearOfHoles(conn, plan.safe_holes)));
+          if (conn_safe)
+          {
+            // conn is start-inclusive (== path.back()) / goal-exclusive; drop the
+            // duplicate start so the polyline stays simple.
+            path.insert(path.end(), conn.begin() + 1, conn.end());
+          }
         }
       }
       if (!conn_safe)
