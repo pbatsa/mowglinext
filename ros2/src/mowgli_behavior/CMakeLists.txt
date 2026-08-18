@@ -435,6 +435,34 @@ if(BUILD_TESTING)
     action_msgs
   )
 
+  # ---- test_localization_guard ----
+  # Autonomous motion requires a fresh RTK Fixed state. RTK Float, a stale
+  # quality stream, or high fused covariance engages the hold; only the active
+  # reverse-off-dock maneuver is explicitly exempted in the tree.
+  ament_add_gtest(test_localization_guard
+    test/test_localization_guard.cpp
+    src/condition_nodes.cpp
+  )
+
+  target_include_directories(test_localization_guard PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
+  )
+
+  ament_target_dependencies(test_localization_guard
+    rclcpp
+    behaviortree_cpp
+    mowgli_interfaces
+    nav2_msgs
+    nav_msgs
+    geometry_msgs
+    std_msgs
+    std_srvs
+    tf2
+    tf2_ros
+    tf2_geometry_msgs
+  )
+
 endif()
 
 ament_package()

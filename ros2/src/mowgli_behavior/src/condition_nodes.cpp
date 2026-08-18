@@ -231,7 +231,27 @@ BT::NodeStatus IsLocalizationDegraded::tick()
 {
   auto ctx = config().blackboard->get<std::shared_ptr<BTContext>>("context");
   std::lock_guard<std::mutex> lock(ctx->context_mutex);
-  return ctx->localization_degraded ? BT::NodeStatus::SUCCESS : BT::NodeStatus::FAILURE;
+  const double gnss_age_s =
+      std::chrono::duration<double>(std::chrono::steady_clock::now() - ctx->last_gnss_status_time)
+          .count();
+  const bool gnss_stale = gnss_age_s > ctx->gnss_status_timeout_s;
+  return (ctx->localization_degraded || ctx->rtk_degraded || gnss_stale) ? BT::NodeStatus::SUCCESS
+                                                                         : BT::NodeStatus::FAILURE;
+}
+
+// ---------------------------------------------------------------------------
+// IsUndocking
+// ---------------------------------------------------------------------------
+
+BT::NodeStatus IsUndocking::tick()
+{
+  auto ctx = config().blackboard->get<std::shared_ptr<BTContext>>("context");
+  std::lock_guard<std::mutex> lock(ctx->context_mutex);
+  constexpr uint8_t kCommandStart = 1;
+  const bool active = ctx->current_command == kCommandStart && ctx->undock_start_recorded &&
+                      ctx->has_high_level_status &&
+                      ctx->last_high_level_status.state_name == "UNDOCKING";
+  return active ? BT::NodeStatus::SUCCESS : BT::NodeStatus::FAILURE;
 }
 
 // ---------------------------------------------------------------------------

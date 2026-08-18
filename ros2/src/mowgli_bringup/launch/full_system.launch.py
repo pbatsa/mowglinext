@@ -241,6 +241,11 @@ def generate_launch_description() -> LaunchDescription:
             # hardcoded 0.5/0.25 and the configured speeds never took effect.
             {"transit_speed": float(robot_params.get("transit_speed", 0.25))},
             {"mowing_speed": float(robot_params.get("mowing_speed", 0.2))},
+            {"rtk_loss_grace_s": float(robot_params.get("rtk_loss_grace_s", 2.0))},
+            {"rtk_recovery_persist_s": float(
+                robot_params.get("rtk_recovery_persist_s", 2.0))},
+            {"gnss_status_timeout_s": float(
+                robot_params.get("gnss_status_timeout_s", 3.0))},
             # mow_angle_deg: operator swath direction. -1 (negative) = AUTO
             # (coverage server picks the swath-count-minimising angle); 0..179 =
             # fixed swath angle in degrees. Read by PlanCoverageArea::buildGoal

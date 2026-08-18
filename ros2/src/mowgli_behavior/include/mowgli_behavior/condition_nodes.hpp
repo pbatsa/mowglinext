@@ -286,14 +286,34 @@ public:
 };
 
 // ---------------------------------------------------------------------------
-// IsLocalizationDegraded — true while the fused σ_xy is too high to mow
-// (hysteresis latched in the /odometry/filtered_map callback).
+// IsLocalizationDegraded — true while fused σ_xy, RTK state, or GNSS stream
+// freshness is not safe for autonomous motion.
 // ---------------------------------------------------------------------------
 
 class IsLocalizationDegraded : public BT::ConditionNode
 {
 public:
   IsLocalizationDegraded(const std::string& name, const BT::NodeConfig& config)
+      : BT::ConditionNode(name, config)
+  {
+  }
+
+  static BT::PortsList providedPorts()
+  {
+    return {};
+  }
+
+  BT::NodeStatus tick() override;
+};
+
+// ---------------------------------------------------------------------------
+// IsUndocking — true only during the short, deliberate reverse-off-dock move.
+// ---------------------------------------------------------------------------
+
+class IsUndocking : public BT::ConditionNode
+{
+public:
+  IsUndocking(const std::string& name, const BT::NodeConfig& config)
       : BT::ConditionNode(name, config)
   {
   }

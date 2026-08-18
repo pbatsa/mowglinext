@@ -104,6 +104,12 @@ mowgli:
     # guard flipped 32× in 15 min and shredded mowing into stutter intervals.
     loc_sigma_pause_persist_s: 3.0
     loc_sigma_resume_persist_s: 2.0
+    # RTK Fixed is required for autonomous transit/mowing. A short loss grace
+    # rides through single-epoch Fixed/Float flicker; recovery must remain Fixed
+    # before motion resumes. A stale /gps/status stream is also unsafe.
+    rtk_loss_grace_s: 2.0
+    rtk_recovery_persist_s: 2.0
+    gnss_status_timeout_s: 3.0
     bt_debug_logging: false
     # idle_nav2_suspend (default false): when true, the BT PAUSEs the Nav2
     # lifecycle stack while parked on the dock so the costmaps stop looping and

@@ -234,6 +234,11 @@ private:
     // exists for lasted minutes.
     loc_sigma_pause_persist_s_ = declare_parameter<double>("loc_sigma_pause_persist_s", 3.0);
     loc_sigma_resume_persist_s_ = declare_parameter<double>("loc_sigma_resume_persist_s", 2.0);
+    rtk_loss_grace_s_ = std::max(0.0, declare_parameter<double>("rtk_loss_grace_s", 2.0));
+    rtk_recovery_persist_s_ =
+        std::max(0.0, declare_parameter<double>("rtk_recovery_persist_s", 2.0));
+    context_->gnss_status_timeout_s =
+        std::max(0.5, declare_parameter<double>("gnss_status_timeout_s", 3.0));
     fused_odom_sub_ = create_subscription<nav_msgs::msg::Odometry>(
         "/odometry/filtered_map",
         rclcpp::QoS(5),
@@ -372,6 +377,8 @@ private:
             context_->gps_is_fixed =
                 (context_->gps_fix_type >= 4) && (msg->position_accuracy < 0.1f);
             context_->gps_quality = std::clamp(1.0f - msg->position_accuracy, 0.0f, 1.0f);
+            context_->rtk_degraded = !context_->gps_is_fixed;
+            context_->last_gnss_status_time = std::chrono::steady_clock::now();
           }
         });
 
@@ -382,21 +389,36 @@ private:
         {
           std::lock_guard<std::mutex> lock(context_->context_mutex);
           has_authoritative_gnss_status_ = true;
+          const auto steady_now = std::chrono::steady_clock::now();
+          const bool stream_was_stale =
+              std::chrono::duration<double>(steady_now - context_->last_gnss_status_time).count() >
+              context_->gnss_status_timeout_s;
+          context_->last_gnss_status_time = steady_now;
           context_->gps_fix_type = mowgli_interfaces::gnss_status_utils::BehaviorTreeFixType(*msg);
           context_->gps_quality = mowgli_interfaces::gnss_status_utils::NormalizedQuality(*msg);
 
           // Debounce RTK-fixed transitions so the BT does not chatter during
           // short-lived fix-state flicker while still trusting the typed
           // /gps/status contract rather than /gps/absolute_pose covariance.
-          constexpr double kGpsFixDebounceSec = 2.0;
           const bool raw_fixed = mowgli_interfaces::gnss_status_utils::BehaviorTreeRtkFixed(*msg);
           const rclcpp::Time gps_now = this->now();
+          if (stream_was_stale && gps_fix_debounce_init_)
+          {
+            // A dead status stream engaged the guard even if the last sample
+            // was Fixed. Require a fresh, sustained Fixed run before releasing
+            // it; one returning packet is not enough evidence to move again.
+            context_->gps_is_fixed = false;
+            context_->rtk_degraded = true;
+            gps_fix_candidate_ = raw_fixed;
+            gps_fix_candidate_since_ = gps_now;
+          }
           if (!gps_fix_debounce_init_)
           {
             gps_fix_debounce_init_ = true;
             gps_fix_candidate_ = raw_fixed;
             gps_fix_candidate_since_ = gps_now;
             context_->gps_is_fixed = raw_fixed;
+            context_->rtk_degraded = !raw_fixed;
           }
           else
           {
@@ -405,9 +427,25 @@ private:
               gps_fix_candidate_ = raw_fixed;
               gps_fix_candidate_since_ = gps_now;
             }
-            if ((gps_now - gps_fix_candidate_since_).seconds() >= kGpsFixDebounceSec)
+            const double persist_s =
+                gps_fix_candidate_ ? rtk_recovery_persist_s_ : rtk_loss_grace_s_;
+            if ((gps_now - gps_fix_candidate_since_).seconds() >= persist_s)
             {
+              const bool was_fixed = context_->gps_is_fixed;
               context_->gps_is_fixed = gps_fix_candidate_;
+              context_->rtk_degraded = !context_->gps_is_fixed;
+              if (was_fixed && context_->rtk_degraded)
+              {
+                RCLCPP_WARN(get_logger(),
+                            "RTK Fixed lost for %.1f s — stopping autonomous motion.",
+                            persist_s);
+              }
+              else if (!was_fixed && context_->gps_is_fixed)
+              {
+                RCLCPP_INFO(get_logger(),
+                            "RTK Fixed stable for %.1f s — autonomous motion may resume.",
+                            persist_s);
+              }
             }
           }
         });
@@ -922,6 +960,8 @@ private:
   double loc_sigma_resume_m_{0.08};
   double loc_sigma_pause_persist_s_{3.0};
   double loc_sigma_resume_persist_s_{2.0};
+  double rtk_loss_grace_s_{2.0};
+  double rtk_recovery_persist_s_{2.0};
   double loc_deg_since_s_{-1.0};
   double loc_rec_since_s_{-1.0};
   rclcpp::Subscription<mowgli_interfaces::msg::AbsolutePose>::SharedPtr gps_sub_;

@@ -221,6 +221,19 @@ struct BTContext
   /// this instead of inferring fix quality from /gps/absolute_pose covariance.
   bool gps_is_fixed{false};
 
+  /// True once RTK Fixed has been absent longer than the configured loss grace.
+  /// RTK Float is deliberately not trusted for autonomous motion at this site.
+  bool rtk_degraded{true};
+
+  /// Arrival time of the latest authoritative GNSS quality update. A stale
+  /// stream is treated the same as RTK loss so a dead bridge cannot leave the
+  /// last Fixed state latched indefinitely.
+  std::chrono::steady_clock::time_point last_gnss_status_time{std::chrono::steady_clock::now()};
+
+  /// Maximum age of the GNSS quality stream before LocalizationGuard stops
+  /// autonomous motion.
+  double gnss_status_timeout_s{3.0};
+
   // -----------------------------------------------------------------------
   // Localization quality flags (set by boundary/replan monitors)
   // -----------------------------------------------------------------------
@@ -239,12 +252,9 @@ struct BTContext
   bool lethal_boundary_violation{false};
 
   /// Set (with hysteresis, see behavior_tree_node's /odometry/filtered_map
-  /// callback) while the fused position uncertainty is too high to trust —
-  /// σ_xy above loc_sigma_pause_m latches it, dropping below
-  /// loc_sigma_resume_m clears it. The LocalizationGuard pauses blade-on
-  /// mowing while set: field incident 2026-08-02 — RTK dropped to plain GPS
-  /// (σ ≈ 1.5 m) for >60 s and FTC kept steering on the drifting estimate
-  /// until the robot physically left the area and BoundaryGuard tripped.
+  /// callback) while the fused position uncertainty is too high to trust.
+  /// LocalizationGuard combines this covariance signal with rtk_degraded and
+  /// GNSS stream freshness.
   bool localization_degraded{false};
 
   /// Current navigation mode: "precise" or "degraded"
