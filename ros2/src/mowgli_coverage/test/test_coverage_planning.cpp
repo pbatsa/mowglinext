@@ -336,9 +336,10 @@ TEST(CoveragePlanning, SquareSwathsAreSerpentine)
   }
 }
 
-// Skip-row mode keeps the row index order 0,2,4… then 1,3,5…, but those skipped
-// row hops must be blade-off reposition gaps, not blade-on connector loops.
-TEST(CoveragePlanning, SkipRowSplitsSkippedSwathHops)
+// Skip-row mode keeps the row index order 0,2,4… then 1,3,5… while still
+// flipping each row toward the nearest endpoint. The skipped-row hops may stay
+// blade-on connector loops when the connector is safe.
+TEST(CoveragePlanning, SkipRowOrdersEveryOtherSwathFirst)
 {
   BoustrophedonPlan plan;
   plan.swath_order_mode = "skip_row";
@@ -350,12 +351,12 @@ TEST(CoveragePlanning, SkipRowSplitsSkippedSwathHops)
   plan.safe_boundary = {{-1.0, -1.0}, {5.0, -1.0}, {5.0, 3.0}, {-1.0, 3.0}, {-1.0, -1.0}};
 
   const auto subs = buildContinuousSubPaths(plan, plan.safe_boundary, 0.18, 0.15, 0.05);
-  ASSERT_EQ(subs.size(), plan.swaths.size());
-  ASSERT_NE(firstVerticalRunAtX(subs[0], 0.0), std::numeric_limits<std::size_t>::max());
-  ASSERT_NE(firstVerticalRunAtX(subs[1], 2.0), std::numeric_limits<std::size_t>::max());
-  ASSERT_NE(firstVerticalRunAtX(subs[2], 4.0), std::numeric_limits<std::size_t>::max());
-  ASSERT_NE(firstVerticalRunAtX(subs[3], 1.0), std::numeric_limits<std::size_t>::max());
-  ASSERT_NE(firstVerticalRunAtX(subs[4], 3.0), std::numeric_limits<std::size_t>::max());
+  ASSERT_FALSE(subs.empty());
+  const std::size_t x2 = firstVerticalRunAtX(subs.front(), 2.0);
+  const std::size_t x1 = firstVerticalRunAtX(subs.front(), 1.0);
+  ASSERT_NE(x2, std::numeric_limits<std::size_t>::max());
+  ASSERT_NE(x1, std::numeric_limits<std::size_t>::max());
+  EXPECT_LT(x2, x1) << "skip_row should drive row 2 before returning for skipped row 1";
 }
 
 // A fixed mow angle is honoured and the plan is deterministic across calls
