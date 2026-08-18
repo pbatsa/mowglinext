@@ -359,6 +359,57 @@ TEST(CoveragePlanning, SkipRowOrdersEveryOtherSwathFirst)
   EXPECT_LT(x2, x1) << "skip_row should drive row 2 before returning for skipped row 1";
 }
 
+// A split field previously lost the global skip-row order after path generation:
+// the finished-subpath nearest-neighbour optimization reordered and reversed the
+// lobes, yielding skip-row in the first lobe and sequential rows later. Preserve
+// the emitted subpath chain so every even row precedes every odd row globally.
+TEST(CoveragePlanning, SkipRowOrderSurvivesSubPathSplits)
+{
+  BoustrophedonPlan plan;
+  plan.swath_order_mode = "skip_row";
+  plan.swaths = {{{0.0, 0.0}, {0.0, 2.0}},
+                 {{1.0, 2.0}, {1.0, 0.0}},
+                 {{2.0, 0.0}, {2.0, 2.0}},
+                 {{3.0, 2.0}, {3.0, 0.0}},
+                 {{4.0, 0.0}, {4.0, 2.0}}};
+  plan.safe_boundary = {{-1.0, -1.0}, {5.0, -1.0}, {5.0, 3.0}, {-1.0, 3.0}, {-1.0, -1.0}};
+  // A nearly field-height obstacle between rows 1 and 2 forces the ordered
+  // chain into multiple blade-off subpaths without intersecting any swath.
+  plan.safe_holes = {{{1.4, -0.8}, {1.6, -0.8}, {1.6, 2.8}, {1.4, 2.8}, {1.4, -0.8}}};
+
+  const auto subs = buildContinuousSubPaths(plan, plan.safe_boundary, 0.18, 0.15, 0.05);
+  ASSERT_GE(subs.size(), 3u) << "test obstacle must split the skip-row chain";
+
+  auto global_run_index = [&subs](double x)
+  {
+    constexpr std::size_t kSubPathStride = 1000000u;
+    for (std::size_t i = 0; i < subs.size(); ++i)
+    {
+      const std::size_t local = firstVerticalRunAtX(subs[i], x);
+      if (local != std::numeric_limits<std::size_t>::max())
+      {
+        return i * kSubPathStride + local;
+      }
+    }
+    return std::numeric_limits<std::size_t>::max();
+  };
+
+  const std::size_t x0 = global_run_index(0.0);
+  const std::size_t x1 = global_run_index(1.0);
+  const std::size_t x2 = global_run_index(2.0);
+  const std::size_t x3 = global_run_index(3.0);
+  const std::size_t x4 = global_run_index(4.0);
+  ASSERT_NE(x0, std::numeric_limits<std::size_t>::max());
+  ASSERT_NE(x1, std::numeric_limits<std::size_t>::max());
+  ASSERT_NE(x2, std::numeric_limits<std::size_t>::max());
+  ASSERT_NE(x3, std::numeric_limits<std::size_t>::max());
+  ASSERT_NE(x4, std::numeric_limits<std::size_t>::max());
+  EXPECT_LT(x0, x2);
+  EXPECT_LT(x2, x4);
+  EXPECT_LT(x4, x1);
+  EXPECT_LT(x1, x3);
+}
+
 // A fixed mow angle is honoured and the plan is deterministic across calls
 // (swath-index resume relies on this).
 TEST(CoveragePlanning, FixedAngleIsHonouredAndDeterministic)

@@ -1642,7 +1642,10 @@ std::vector<std::vector<std::pair<double, double>>> buildContinuousSubPaths(
   //     plan yields a fixed NN order, so indices are stable across re-plans).
   //   * Adopt the NN order ONLY when it actually shortens the transit, so a field
   //     the chain order already sequenced well can never regress.
-  if (out.size() > 1)
+  //   * Skip-row is an explicit global row-order contract (0,2,4… then 1,3,5…).
+  //     Reordering or reversing split sub-paths here can silently turn the later
+  //     lobes back into sequential mowing, so preserve their emitted order.
+  if (out.size() > 1 && plan.swath_order_mode != "skip_row")
   {
     auto gap = [](const std::pair<double, double>& a, const std::pair<double, double>& b)
     {
