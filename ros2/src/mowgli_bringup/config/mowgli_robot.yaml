@@ -213,6 +213,8 @@ mowgli:
     localization_max_gnss_status_age_sec: 2.0
     localization_max_msm_age_sec_no_lidar: 3.0
     localization_max_msm_age_sec_with_lidar: 8.0
+    localization_max_degraded_drift_m_no_lidar: 0.75
+    localization_max_degraded_drift_m_with_lidar: 2.0
 
     # NTRIP (RTK correction stream)
     ntrip_enabled: false

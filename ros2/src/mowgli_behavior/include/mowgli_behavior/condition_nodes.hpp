@@ -257,6 +257,7 @@ public:
 ///   max_corrections_missing_sec   (double, default 3.0)
 ///   max_gnss_status_age_sec       (double, default 2.0)
 ///   max_msm_age_sec               (double, default 3.0)
+///   max_degraded_drift_m          (double, default 0.0 disables distance gate)
 class IsLocalizationUnsafe : public BT::ConditionNode
 {
 public:
@@ -280,6 +281,9 @@ public:
                               2.0,
                               "Allowed /gps/status age before stopping"),
         BT::InputPort<double>("max_msm_age_sec", 3.0, "Allowed MSM summary age before stopping"),
+        BT::InputPort<double>("max_degraded_drift_m",
+                              0.0,
+                              "Allowed wheel-odometry travel while GNSS is degraded"),
     };
   }
 
@@ -290,6 +294,9 @@ private:
   std::chrono::steady_clock::time_point rtk_float_since_{};
   bool corrections_missing_timer_set_{false};
   std::chrono::steady_clock::time_point corrections_missing_since_{};
+  bool degraded_drift_start_set_{false};
+  double degraded_drift_start_x_{0.0};
+  double degraded_drift_start_y_{0.0};
 };
 
 // ---------------------------------------------------------------------------

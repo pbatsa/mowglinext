@@ -228,6 +228,7 @@ BT::NodeStatus IsLocalizationUnsafe::tick()
   {
     rtk_float_timer_set_ = false;
     corrections_missing_timer_set_ = false;
+    degraded_drift_start_set_ = false;
     return BT::NodeStatus::FAILURE;
   }
 
@@ -236,11 +237,13 @@ BT::NodeStatus IsLocalizationUnsafe::tick()
   double max_corrections_missing_sec = 3.0;
   double max_gnss_status_age_sec = 2.0;
   double max_msm_age_sec = 3.0;
+  double max_degraded_drift_m = 0.0;
   getInput<bool>("require_rtk_fixed", require_rtk_fixed);
   getInput<double>("max_rtk_float_age_sec", max_rtk_float_age_sec);
   getInput<double>("max_corrections_missing_sec", max_corrections_missing_sec);
   getInput<double>("max_gnss_status_age_sec", max_gnss_status_age_sec);
   getInput<double>("max_msm_age_sec", max_msm_age_sec);
+  getInput<double>("max_degraded_drift_m", max_degraded_drift_m);
 
   mowgli_interfaces::msg::GnssStatus status;
   std::chrono::steady_clock::time_point status_time;
@@ -248,6 +251,9 @@ BT::NodeStatus IsLocalizationUnsafe::tick()
   bool gps_is_fixed = false;
   bool charging = false;
   bool lidar_enabled = false;
+  bool has_wheel_odom = false;
+  double wheel_odom_x = 0.0;
+  double wheel_odom_y = 0.0;
   {
     std::lock_guard<std::mutex> lock(ctx->context_mutex);
     status = ctx->latest_gnss_status;
@@ -256,14 +262,53 @@ BT::NodeStatus IsLocalizationUnsafe::tick()
     gps_is_fixed = ctx->gps_is_fixed;
     charging = ctx->latest_power.charger_enabled;
     lidar_enabled = ctx->lidar_enabled;
+    has_wheel_odom = ctx->has_wheel_odom;
+    wheel_odom_x = ctx->wheel_odom_x;
+    wheel_odom_y = ctx->wheel_odom_y;
   }
 
   if (charging)
   {
     rtk_float_timer_set_ = false;
     corrections_missing_timer_set_ = false;
+    degraded_drift_start_set_ = false;
     return BT::NodeStatus::FAILURE;
   }
+
+  auto reset_degraded_drift = [this]()
+  {
+    degraded_drift_start_set_ = false;
+  };
+
+  auto degraded_drift_exceeded =
+      [this, &ctx, has_wheel_odom, wheel_odom_x, wheel_odom_y, max_degraded_drift_m]() -> bool
+  {
+    if (max_degraded_drift_m <= 0.0 || !has_wheel_odom)
+    {
+      return false;
+    }
+    if (!degraded_drift_start_set_)
+    {
+      degraded_drift_start_set_ = true;
+      degraded_drift_start_x_ = wheel_odom_x;
+      degraded_drift_start_y_ = wheel_odom_y;
+      return false;
+    }
+    const double dx = wheel_odom_x - degraded_drift_start_x_;
+    const double dy = wheel_odom_y - degraded_drift_start_y_;
+    const double drift_m = std::hypot(dx, dy);
+    if (drift_m > max_degraded_drift_m)
+    {
+      RCLCPP_WARN_THROTTLE(ctx->node->get_logger(),
+                           *ctx->node->get_clock(),
+                           5000,
+                           "IsLocalizationUnsafe: GNSS degraded drift %.2fm exceeds %.2fm",
+                           drift_m,
+                           max_degraded_drift_m);
+      return true;
+    }
+    return false;
+  };
 
   const auto now = std::chrono::steady_clock::now();
   if (!has_status || status_time.time_since_epoch().count() == 0)
@@ -272,6 +317,7 @@ BT::NodeStatus IsLocalizationUnsafe::tick()
                          *ctx->node->get_clock(),
                          5000,
                          "IsLocalizationUnsafe: no /gps/status yet");
+    reset_degraded_drift();
     mark_localization_hold();
     return BT::NodeStatus::SUCCESS;
   }
@@ -285,6 +331,7 @@ BT::NodeStatus IsLocalizationUnsafe::tick()
                          "IsLocalizationUnsafe: /gps/status stale for %.1fs (>%.1fs)",
                          status_age_sec,
                          max_gnss_status_age_sec);
+    reset_degraded_drift();
     mark_localization_hold();
     return BT::NodeStatus::SUCCESS;
   }
@@ -305,7 +352,7 @@ BT::NodeStatus IsLocalizationUnsafe::tick()
     }
     const double missing_sec =
         std::chrono::duration<double>(now - corrections_missing_since_).count();
-    if (missing_sec > max_corrections_missing_sec)
+    if (degraded_drift_exceeded() || missing_sec > max_corrections_missing_sec)
     {
       RCLCPP_WARN_THROTTLE(ctx->node->get_logger(),
                            *ctx->node->get_clock(),
@@ -334,7 +381,7 @@ BT::NodeStatus IsLocalizationUnsafe::tick()
       rtk_float_since_ = now;
     }
     const double degraded_sec = std::chrono::duration<double>(now - rtk_float_since_).count();
-    if (degraded_sec > max_rtk_float_age_sec)
+    if (degraded_drift_exceeded() || degraded_sec > max_rtk_float_age_sec)
     {
       RCLCPP_WARN_THROTTLE(ctx->node->get_logger(),
                            *ctx->node->get_clock(),
@@ -353,6 +400,11 @@ BT::NodeStatus IsLocalizationUnsafe::tick()
   else
   {
     rtk_float_timer_set_ = false;
+  }
+
+  if (corrections_healthy && (!require_rtk_fixed || gps_is_fixed))
+  {
+    reset_degraded_drift();
   }
 
   return BT::NodeStatus::FAILURE;

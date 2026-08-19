@@ -41,6 +41,7 @@
 #include "nav2_msgs/action/navigate_to_pose.hpp"
 #include "nav2_msgs/action/undock_robot.hpp"
 #include "nav2_msgs/msg/collision_monitor_state.hpp"
+#include "nav_msgs/msg/odometry.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_action/rclcpp_action.hpp"
 #include "sensor_msgs/msg/laser_scan.hpp"
@@ -295,6 +296,18 @@ private:
                 (context_->gps_fix_type >= 4) && (msg->position_accuracy < 0.1f);
             context_->gps_quality = std::clamp(1.0f - msg->position_accuracy, 0.0f, 1.0f);
           }
+        });
+
+    wheel_odom_sub_ = create_subscription<nav_msgs::msg::Odometry>(
+        "/wheel_odom",
+        10,
+        [this](nav_msgs::msg::Odometry::ConstSharedPtr msg)
+        {
+          std::lock_guard<std::mutex> lock(context_->context_mutex);
+          context_->wheel_odom_x = msg->pose.pose.position.x;
+          context_->wheel_odom_y = msg->pose.pose.position.y;
+          context_->last_wheel_odom_time = std::chrono::steady_clock::now();
+          context_->has_wheel_odom = true;
         });
 
     gnss_status_sub_ = create_subscription<mowgli_interfaces::msg::GnssStatus>(
@@ -722,6 +735,10 @@ private:
         declare_parameter<double>("localization_max_msm_age_sec_no_lidar", 3.0);
     const double max_msm_age_with_lidar =
         declare_parameter<double>("localization_max_msm_age_sec_with_lidar", 8.0);
+    const double max_degraded_drift_no_lidar =
+        declare_parameter<double>("localization_max_degraded_drift_m_no_lidar", 0.75);
+    const double max_degraded_drift_with_lidar =
+        declare_parameter<double>("localization_max_degraded_drift_m_with_lidar", 2.0);
 
     blackboard_->set("localization_safety_enabled", localization_safety_enabled);
     blackboard_->set("localization_require_rtk_fixed",
@@ -736,6 +753,9 @@ private:
     blackboard_->set("localization_max_gnss_status_age_sec", max_gnss_status_age);
     blackboard_->set("localization_max_msm_age_sec",
                      context_->lidar_enabled ? max_msm_age_with_lidar : max_msm_age_no_lidar);
+    blackboard_->set("localization_max_degraded_drift_m",
+                     context_->lidar_enabled ? max_degraded_drift_with_lidar
+                                             : max_degraded_drift_no_lidar);
 
     declare_parameter<double>("tick_rate", 10.0);
 
@@ -884,6 +904,7 @@ private:
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr boundary_violation_sub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr lethal_boundary_violation_sub_;
   rclcpp::Subscription<mowgli_interfaces::msg::AbsolutePose>::SharedPtr gps_sub_;
+  rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr wheel_odom_sub_;
   rclcpp::Subscription<mowgli_interfaces::msg::GnssStatus>::SharedPtr gnss_status_sub_;
   rclcpp::Subscription<nav2_msgs::msg::CollisionMonitorState>::SharedPtr collision_monitor_sub_;
   rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr scan_liveness_sub_;

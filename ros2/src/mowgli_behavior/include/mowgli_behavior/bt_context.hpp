@@ -218,6 +218,14 @@ struct BTContext
   double gps_x{0.0};
   double gps_y{0.0};
 
+  /// Latest wheel-odometry position in odom frame. Used only for travelled
+  /// distance during short GNSS degradation windows, where GPS/map poses can be
+  /// biased by the very outage we are trying to bound.
+  double wheel_odom_x{0.0};
+  double wheel_odom_y{0.0};
+  bool has_wheel_odom{false};
+  std::chrono::steady_clock::time_point last_wheel_odom_time{};
+
   // -----------------------------------------------------------------------
   // GPS quality classification (derived from gps_quality / fix_type)
   // -----------------------------------------------------------------------

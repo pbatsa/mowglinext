@@ -133,7 +133,8 @@
               max_rtk_float_age_sec="{localization_max_rtk_float_age_sec}"
               max_corrections_missing_sec="{localization_max_corrections_missing_sec}"
               max_gnss_status_age_sec="{localization_max_gnss_status_age_sec}"
-              max_msm_age_sec="{localization_max_msm_age_sec}"/>
+              max_msm_age_sec="{localization_max_msm_age_sec}"
+              max_degraded_drift_m="{localization_max_degraded_drift_m}"/>
         </Inverter>
         <Sequence name="LocalizationUnsafeHandler">
           <SetMowerEnabled enabled="false"/>

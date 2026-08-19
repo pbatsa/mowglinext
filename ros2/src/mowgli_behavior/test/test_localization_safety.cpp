@@ -88,6 +88,15 @@ protected:
     ctx->gps_is_fixed = fixed;
   }
 
+  void setWheelOdom(double x, double y)
+  {
+    std::lock_guard<std::mutex> lock(ctx->context_mutex);
+    ctx->wheel_odom_x = x;
+    ctx->wheel_odom_y = y;
+    ctx->last_wheel_odom_time = std::chrono::steady_clock::now();
+    ctx->has_wheel_odom = true;
+  }
+
   BT::Tree makeTree(const std::string& attrs)
   {
     const std::string xml = R"(
@@ -157,6 +166,18 @@ TEST_F(LocalizationSafetyTest, RtkFloatBlocksAfterGraceWindowWhenRequired)
 
   EXPECT_EQ(tree.tickOnce(), BT::NodeStatus::FAILURE);
   std::this_thread::sleep_for(2ms);
+  EXPECT_EQ(tree.tickOnce(), BT::NodeStatus::SUCCESS);
+}
+
+TEST_F(LocalizationSafetyTest, RtkFloatBlocksAfterDriftBudgetWhenRequired)
+{
+  setHealthyStatus(false);
+  setWheelOdom(0.0, 0.0);
+  auto tree = makeTree(
+      R"(require_rtk_fixed="true" max_rtk_float_age_sec="60.0" max_degraded_drift_m="0.5")");
+
+  EXPECT_EQ(tree.tickOnce(), BT::NodeStatus::FAILURE);
+  setWheelOdom(0.6, 0.0);
   EXPECT_EQ(tree.tickOnce(), BT::NodeStatus::SUCCESS);
 }
 

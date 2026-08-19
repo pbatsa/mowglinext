@@ -266,6 +266,10 @@ def generate_launch_description() -> LaunchDescription:
                 robot_params.get("localization_max_msm_age_sec_no_lidar", 3.0))},
             {"localization_max_msm_age_sec_with_lidar": float(
                 robot_params.get("localization_max_msm_age_sec_with_lidar", 8.0))},
+            {"localization_max_degraded_drift_m_no_lidar": float(
+                robot_params.get("localization_max_degraded_drift_m_no_lidar", 0.75))},
+            {"localization_max_degraded_drift_m_with_lidar": float(
+                robot_params.get("localization_max_degraded_drift_m_with_lidar", 2.0))},
             # mow_angle_deg: operator swath direction. -1 (negative) = AUTO
             # (coverage server picks the swath-count-minimising angle); 0..179 =
             # fixed swath angle in degrees. Read by PlanCoverageArea::buildGoal

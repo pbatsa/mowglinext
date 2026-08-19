@@ -215,6 +215,7 @@ def generate_launch_description() -> LaunchDescription:
             {"localization_max_corrections_missing_sec_no_lidar": 1.0},
             {"localization_max_gnss_status_age_sec": 2.0},
             {"localization_max_msm_age_sec_no_lidar": 2.0},
+            {"localization_max_degraded_drift_m_no_lidar": 0.5},
         ],
     )
 
