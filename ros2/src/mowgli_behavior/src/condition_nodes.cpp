@@ -216,6 +216,11 @@ BT::NodeStatus IsGPSFixed::tick()
 BT::NodeStatus IsLocalizationUnsafe::tick()
 {
   auto ctx = config().blackboard->get<std::shared_ptr<BTContext>>("context");
+  auto mark_localization_hold = [&ctx]()
+  {
+    std::lock_guard<std::mutex> lock(ctx->context_mutex);
+    ctx->localization_hold_interrupted = true;
+  };
 
   bool enabled = true;
   getInput<bool>("enabled", enabled);
@@ -267,6 +272,7 @@ BT::NodeStatus IsLocalizationUnsafe::tick()
                          *ctx->node->get_clock(),
                          5000,
                          "IsLocalizationUnsafe: no /gps/status yet");
+    mark_localization_hold();
     return BT::NodeStatus::SUCCESS;
   }
 
@@ -279,6 +285,7 @@ BT::NodeStatus IsLocalizationUnsafe::tick()
                          "IsLocalizationUnsafe: /gps/status stale for %.1fs (>%.1fs)",
                          status_age_sec,
                          max_gnss_status_age_sec);
+    mark_localization_hold();
     return BT::NodeStatus::SUCCESS;
   }
 
@@ -310,6 +317,7 @@ BT::NodeStatus IsLocalizationUnsafe::tick()
                            status.msm_summary_age_s,
                            max_msm_age_sec,
                            lidar_enabled ? "true" : "false");
+      mark_localization_hold();
       return BT::NodeStatus::SUCCESS;
     }
   }
@@ -338,6 +346,7 @@ BT::NodeStatus IsLocalizationUnsafe::tick()
                            static_cast<unsigned>(status.fix_type),
                            static_cast<unsigned>(status.rtk_mode),
                            status.quality_percent);
+      mark_localization_hold();
       return BT::NodeStatus::SUCCESS;
     }
   }

@@ -209,6 +209,7 @@ BT::NodeStatus EndSession::tick()
   // so the next COMMAND_START can plan + mow each area afresh.
   ctx->attempted_areas.clear();
   ctx->area_attempt_count.clear();
+  ctx->localization_hold_interrupted = false;
   // Also clear the per-area coverage high-water mark (documented in
   // bt_context.hpp as "Cleared by EndSession"). Leaking it across sessions
   // makes the next session's first GetNextUnmowedArea dispatch compute

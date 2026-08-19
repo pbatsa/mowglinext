@@ -143,6 +143,12 @@ struct BTContext
   /// no-progress counter). Below this, a dispatch is treated as stuck.
   static constexpr float kAreaProgressEpsilonPct = 0.5f;
 
+  /// Set by the localization safety guard when it pauses autonomous motion for
+  /// stale GNSS/corrections or RTK float. Consumed by GetNextUnmowedArea so the
+  /// retry preserves the current area instead of counting as a no-progress
+  /// coverage attempt.
+  bool localization_hold_interrupted{false};
+
   // -----------------------------------------------------------------------
   // Swath-completion model (replaces the mow_progress cell grid)
   // -----------------------------------------------------------------------

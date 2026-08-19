@@ -250,3 +250,29 @@ TEST_F(GetNextUnmowedAreaTest, ResumeCursorProgressPreventsAttemptedSkip)
     EXPECT_EQ(ctx->area_attempt_count[0], 1u);
   }
 }
+
+// RTK/correction loss pauses autonomous motion and re-enters area selection once
+// localization recovers. That pause should preserve the active area instead of
+// burning a no-progress attempt and prematurely rolling to the next area.
+TEST_F(GetNextUnmowedAreaTest, LocalizationHoldRetryDoesNotCountAsNoProgressAttempt)
+{
+  areas[0] = {"front_lawn", /*is_navigation_area=*/false};
+  areas[1] = {"side_lawn", /*is_navigation_area=*/false};
+  waitForService();
+
+  ctx->area_last_coverage[0] = 42.0f;
+  ctx->area_resume_pose_index[0] = 420;
+  ctx->area_path_pose_count[0] = 1000;
+  ctx->area_attempt_count[0] = BTContext::kMaxAreaAttempts - 1;
+  ctx->localization_hold_interrupted = true;
+
+  auto tree = makeTree(/*max_areas=*/5);
+  EXPECT_EQ(tickToCompletion(tree), BT::NodeStatus::SUCCESS);
+
+  uint32_t selected = 99;
+  ASSERT_TRUE(blackboard->get("area_index", selected));
+  EXPECT_EQ(selected, 0u);
+  EXPECT_EQ(ctx->attempted_areas.count(0u), 0u);
+  EXPECT_EQ(ctx->area_attempt_count[0], BTContext::kMaxAreaAttempts - 1);
+  EXPECT_FALSE(ctx->localization_hold_interrupted);
+}

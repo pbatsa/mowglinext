@@ -1592,12 +1592,26 @@ BT::NodeStatus GetNextUnmowedArea::processResponse()
   auto last_it = ctx->area_last_coverage.find(current_area_idx_);
   const bool made_progress = (last_it == ctx->area_last_coverage.end()) ||
                              (progress_pct > last_it->second + BTContext::kAreaProgressEpsilonPct);
+  const bool localization_hold_interrupted = ctx->localization_hold_interrupted;
+  ctx->localization_hold_interrupted = false;
   if (made_progress)
   {
     ctx->area_last_coverage[current_area_idx_] = progress_pct;
     n = 0;
   }
-  n++;
+  if (localization_hold_interrupted && !made_progress)
+  {
+    RCLCPP_INFO(ctx->node->get_logger(),
+                "GetNextUnmowedArea: area %u retry follows localization hold; "
+                "not counting as a no-progress attempt (%u/%u)",
+                current_area_idx_,
+                n,
+                BTContext::kMaxAreaAttempts);
+  }
+  else
+  {
+    n++;
+  }
   if (n >= BTContext::kMaxAreaAttempts)
   {
     ctx->attempted_areas.insert(current_area_idx_);
