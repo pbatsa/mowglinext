@@ -62,6 +62,8 @@ enum PacketId : uint8_t
   PACKET_ID_LL_UI_EVENT = 0x03,  ///< STM32 → Pi: UI button event
   PACKET_ID_LL_ODOMETRY = 0x04,  ///< STM32 → Pi: wheel odometry
   PACKET_ID_LL_RESET_CAUSE = 0x06,  ///< STM32 → Pi: current boot reset cause
+  PACKET_ID_LL_PERIMETER_WIRE = 0x07,  ///< STM32 → Pi: perimeter coil correlations
+  PACKET_ID_LL_PERIMETER_CAPABILITY_RSP = 0x08,  ///< STM32 → Pi: optional perimeter support
   PACKET_ID_LL_HIGH_LEVEL_CONFIG_REQ = 0x11,  ///< Bidirectional: config request
   PACKET_ID_LL_HIGH_LEVEL_CONFIG_RSP = 0x12,  ///< Bidirectional: config response
   PACKET_ID_LL_HEARTBEAT = 0x42,  ///< Pi → STM32: heartbeat
@@ -75,6 +77,9 @@ enum PacketId : uint8_t
   PACKET_ID_LL_SET_YAW_PID = 0x55,  ///< Pi → STM32: firmware yaw-rate loop tuning (Option C)
   PACKET_ID_LL_SET_KINEMATICS = 0x56,  ///< Pi → STM32: runtime max-speed cap + wheel base
   PACKET_ID_LL_SET_SAFETY_LIMITS = 0x57,  ///< Pi → STM32: runtime charge ceiling + e-stop timeouts
+  PACKET_ID_LL_SET_PERIMETER_LISTEN =
+      0x58,  ///< Pi → STM32: select/off perimeter-wire listening signal
+  PACKET_ID_LL_PERIMETER_CAPABILITY_REQ = 0x59,  ///< Pi → STM32: query perimeter support
 };
 
 /// Magic byte in LlReboot — a dedicated reboot packet plus this confirmation
@@ -261,6 +266,37 @@ struct LlResetCause
   uint8_t type;  ///< Must equal PACKET_ID_LL_RESET_CAUSE
   uint8_t reset_cause;  ///< RESET_CAUSE_* constant
   uint8_t last_stage_before_reset;  ///< WATCHDOG_STAGE_* constant
+  uint16_t crc;  ///< CRC-16 CCITT over all preceding bytes
+};
+
+/**
+ * @brief Perimeter-wire coil correlations sent by the STM32
+ * (PACKET_ID_LL_PERIMETER_WIRE = 0x07).
+ *
+ * Values are unitless matched-filter scores for the selected perimeter signal.
+ * ROS2 owns thresholding and steering policy; firmware only samples coils and
+ * reports raw left/center/right correlations.
+ */
+struct LlPerimeterWire
+{
+  uint8_t type;  ///< Must equal PACKET_ID_LL_PERIMETER_WIRE
+  uint8_t signal_code;  ///< 0=off, otherwise firmware-defined signal code
+  float left_correlation;  ///< Left coil matched-filter correlation
+  float center_correlation;  ///< Center coil matched-filter correlation
+  float right_correlation;  ///< Right coil matched-filter correlation
+  uint16_t crc;  ///< CRC-16 CCITT over all preceding bytes
+};
+
+/**
+ * @brief Optional perimeter capability response from the STM32
+ * (PACKET_ID_LL_PERIMETER_CAPABILITY_RSP = 0x08).
+ */
+struct LlPerimeterCapabilityRsp
+{
+  uint8_t type;  ///< Must equal PACKET_ID_LL_PERIMETER_CAPABILITY_RSP
+  uint8_t available;  ///< 1 if firmware was built with perimeter support
+  uint8_t listening;  ///< 1 if perimeter listening is currently enabled
+  uint8_t signal_code;  ///< 0=off, otherwise firmware-defined signal code
   uint16_t crc;  ///< CRC-16 CCITT over all preceding bytes
 };
 
@@ -464,6 +500,57 @@ static_assert(offsetof(LlSetSafetyLimits, play_clear_ms) == 17u,
 static_assert(offsetof(LlSetSafetyLimits, crc) == 19u, "LlSetSafetyLimits.crc offset drifted");
 
 /**
+ * @brief Select/off perimeter-wire listening on the STM32
+ * (PACKET_ID_LL_SET_PERIMETER_LISTEN = 0x58).
+ */
+struct LlSetPerimeterListen
+{
+  uint8_t type;  ///< Must equal PACKET_ID_LL_SET_PERIMETER_LISTEN
+  uint8_t signal_code;  ///< 0=off, otherwise firmware-defined signal code
+  uint16_t crc;  ///< CRC-16 CCITT over all preceding bytes
+};
+
+/**
+ * @brief Optional perimeter capability request sent by the Pi
+ * (PACKET_ID_LL_PERIMETER_CAPABILITY_REQ = 0x59).
+ */
+struct LlPerimeterCapabilityReq
+{
+  uint8_t type;  ///< Must equal PACKET_ID_LL_PERIMETER_CAPABILITY_REQ
+  uint16_t crc;  ///< CRC-16 CCITT over all preceding bytes
+};
+
+static_assert(offsetof(LlPerimeterWire, type) == 0u, "LlPerimeterWire.type offset drifted");
+static_assert(offsetof(LlPerimeterWire, signal_code) == 1u,
+              "LlPerimeterWire.signal_code offset drifted");
+static_assert(offsetof(LlPerimeterWire, left_correlation) == 2u,
+              "LlPerimeterWire.left_correlation offset drifted");
+static_assert(offsetof(LlPerimeterWire, center_correlation) == 6u,
+              "LlPerimeterWire.center_correlation offset drifted");
+static_assert(offsetof(LlPerimeterWire, right_correlation) == 10u,
+              "LlPerimeterWire.right_correlation offset drifted");
+static_assert(offsetof(LlPerimeterWire, crc) == 14u, "LlPerimeterWire.crc offset drifted");
+static_assert(offsetof(LlPerimeterCapabilityRsp, type) == 0u,
+              "LlPerimeterCapabilityRsp.type offset drifted");
+static_assert(offsetof(LlPerimeterCapabilityRsp, available) == 1u,
+              "LlPerimeterCapabilityRsp.available offset drifted");
+static_assert(offsetof(LlPerimeterCapabilityRsp, listening) == 2u,
+              "LlPerimeterCapabilityRsp.listening offset drifted");
+static_assert(offsetof(LlPerimeterCapabilityRsp, signal_code) == 3u,
+              "LlPerimeterCapabilityRsp.signal_code offset drifted");
+static_assert(offsetof(LlPerimeterCapabilityRsp, crc) == 4u,
+              "LlPerimeterCapabilityRsp.crc offset drifted");
+static_assert(offsetof(LlSetPerimeterListen, type) == 0u,
+              "LlSetPerimeterListen.type offset drifted");
+static_assert(offsetof(LlSetPerimeterListen, signal_code) == 1u,
+              "LlSetPerimeterListen.signal_code offset drifted");
+static_assert(offsetof(LlSetPerimeterListen, crc) == 2u, "LlSetPerimeterListen.crc offset drifted");
+static_assert(offsetof(LlPerimeterCapabilityReq, type) == 0u,
+              "LlPerimeterCapabilityReq.type offset drifted");
+static_assert(offsetof(LlPerimeterCapabilityReq, crc) == 1u,
+              "LlPerimeterCapabilityReq.crc offset drifted");
+
+/**
  * @brief Blade motor status packet from STM32 (PACKET_ID_LL_BLADE_STATUS = 0x05).
  */
 struct LlBladeStatus
@@ -521,6 +608,8 @@ static_assert(sizeof(LlImu) == 41u, "LlImu layout mismatch");
 static_assert(sizeof(LlUiEvent) == 5u, "LlUiEvent layout mismatch");
 static_assert(sizeof(LlOdometry) == 17u, "LlOdometry layout mismatch");
 static_assert(sizeof(LlResetCause) == 5u, "LlResetCause layout mismatch");
+static_assert(sizeof(LlPerimeterWire) == 16u, "LlPerimeterWire layout mismatch");
+static_assert(sizeof(LlPerimeterCapabilityRsp) == 6u, "LlPerimeterCapabilityRsp layout mismatch");
 static_assert(sizeof(LlHeartbeat) == 5u, "LlHeartbeat layout mismatch");
 static_assert(sizeof(LlHighLevelState) == 5u, "LlHighLevelState layout mismatch");
 static_assert(sizeof(LlCmdVel) == 11u, "LlCmdVel layout mismatch");
@@ -532,5 +621,7 @@ static_assert(sizeof(LlSetDrivePid) == 27u, "LlSetDrivePid layout mismatch");
 static_assert(sizeof(LlSetYawPid) == 21u, "LlSetYawPid layout mismatch");
 static_assert(sizeof(LlSetKinematics) == 11u, "LlSetKinematics layout mismatch");
 static_assert(sizeof(LlSetSafetyLimits) == 21u, "LlSetSafetyLimits layout mismatch");
+static_assert(sizeof(LlSetPerimeterListen) == 4u, "LlSetPerimeterListen layout mismatch");
+static_assert(sizeof(LlPerimeterCapabilityReq) == 3u, "LlPerimeterCapabilityReq layout mismatch");
 
 }  // namespace mowgli_hardware

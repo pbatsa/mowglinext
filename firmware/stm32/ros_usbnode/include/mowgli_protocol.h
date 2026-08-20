@@ -17,7 +17,10 @@
  *   payload = packed struct bytes + CRC-16 CCITT (appended as last 2 bytes)
  *
  * IMPORTANT: Keep this header in sync with ll_datatypes.hpp on the ROS 2 side.
- * The struct layouts and packet IDs MUST be identical on both ends.
+ * Existing struct layouts and packet IDs MUST be identical on both ends.
+ * Optional additive packet IDs may be introduced without bumping
+ * MOWGLI_PROTOCOL_VERSION only when old firmware safely ignores the new host
+ * packet and old hosts safely ignore the new firmware packet.
  */
 
 #ifndef MOWGLI_PROTOCOL_H
@@ -107,6 +110,12 @@ extern "C" {
 /** Blade motor status packet (pkt_blade_status_t). */
 #define PKT_ID_BLADE_STATUS 0x05u
 
+/** Perimeter-wire coil correlation packet (pkt_perimeter_wire_t). */
+#define PKT_ID_PERIMETER_WIRE 0x07u
+
+/** Optional perimeter capability response packet (pkt_perimeter_capability_rsp_t). */
+#define PKT_ID_PERIMETER_CAPABILITY_RSP 0x08u
+
 /** High-level config response packet. */
 #define PKT_ID_CONFIG_RSP 0x12u
 
@@ -165,6 +174,12 @@ extern "C" {
  *  stronger, never weaker (see pkt_set_safety_limits_t); the compile-time
  *  board_defaults.h values remain the power-on fallback. */
 #define PKT_ID_SET_SAFETY_LIMITS 0x57u
+
+/** Select/off the perimeter-wire signal listened for by the firmware. */
+#define PKT_ID_SET_PERIMETER_LISTEN 0x58u
+
+/** Optional perimeter capability request packet. */
+#define PKT_ID_PERIMETER_CAPABILITY_REQ 0x59u
 
 /* ---------------------------------------------------------------------------
  * status_bitmask bit definitions  (pkt_status_t::status_bitmask)
@@ -386,6 +401,43 @@ typedef struct {
 } pkt_reset_cause_t;
 
 /**
+ * @brief Perimeter-wire coil correlations — Firmware -> Host
+ * (PKT_ID_PERIMETER_WIRE = 0x07).
+ *
+ * Values are unitless matched-filter scores for the selected perimeter signal.
+ * ROS 2 owns thresholding and steering policy; firmware only samples coils and
+ * reports raw left/center/right correlations.
+ *
+ * Wire size: 16 bytes (must match sizeof(LlPerimeterWire) in ll_datatypes.hpp).
+ */
+typedef struct {
+  uint8_t type;              /**< PKT_ID_PERIMETER_WIRE */
+  uint8_t signal_code;       /**< 0=off, otherwise firmware-defined signal code */
+  float left_correlation;    /**< Left coil matched-filter correlation */
+  float center_correlation;  /**< Center coil matched-filter correlation */
+  float right_correlation;   /**< Right coil matched-filter correlation */
+  uint16_t crc;              /**< CRC-16 CCITT over preceding bytes */
+} pkt_perimeter_wire_t;
+
+/**
+ * @brief Perimeter capability response — Firmware -> Host
+ * (PKT_ID_PERIMETER_CAPABILITY_RSP = 0x08).
+ *
+ * This additive packet lets new firmware report whether it was built with
+ * OPTION_PERIMETER without growing pkt_config_rsp_t or breaking older v6
+ * firmware/images.
+ *
+ * Wire size: 6 bytes (must match sizeof(LlPerimeterCapabilityRsp) in ll_datatypes.hpp).
+ */
+typedef struct {
+  uint8_t type;        /**< PKT_ID_PERIMETER_CAPABILITY_RSP */
+  uint8_t available;   /**< 1 if OPTION_PERIMETER is compiled in, otherwise 0 */
+  uint8_t listening;   /**< 1 if perimeter listening is currently enabled */
+  uint8_t signal_code; /**< 0=off, otherwise firmware-defined signal code */
+  uint16_t crc;        /**< CRC-16 CCITT over preceding bytes */
+} pkt_perimeter_capability_rsp_t;
+
+/**
  * @brief Heartbeat packet — Host -> Firmware (PKT_ID_HEARTBEAT = 0x42).
  *
  * The host must send this at least once every ~500 ms or the STM32 will
@@ -584,6 +636,29 @@ typedef struct {
 } pkt_set_safety_limits_t;
 
 /**
+ * @brief Select/off perimeter-wire listening — Host -> Firmware
+ * (PKT_ID_SET_PERIMETER_LISTEN = 0x58).
+ *
+ * Wire size: 4 bytes (must match sizeof(LlSetPerimeterListen) in ll_datatypes.hpp).
+ */
+typedef struct {
+  uint8_t type;        /**< PKT_ID_SET_PERIMETER_LISTEN */
+  uint8_t signal_code; /**< 0=off, otherwise firmware-defined signal code */
+  uint16_t crc;        /**< CRC-16 CCITT over preceding bytes */
+} pkt_set_perimeter_listen_t;
+
+/**
+ * @brief Perimeter capability request — Host -> Firmware
+ * (PKT_ID_PERIMETER_CAPABILITY_REQ = 0x59).
+ *
+ * Wire size: 3 bytes (must match sizeof(LlPerimeterCapabilityReq) in ll_datatypes.hpp).
+ */
+typedef struct {
+  uint8_t type; /**< PKT_ID_PERIMETER_CAPABILITY_REQ */
+  uint16_t crc; /**< CRC-16 CCITT over preceding bytes */
+} pkt_perimeter_capability_req_t;
+
+/**
  * @brief Blade motor status packet — Firmware -> Host (PKT_ID_BLADE_STATUS =
  * 0x05).
  *
@@ -667,6 +742,10 @@ typedef struct {
  *   pkt_reset_cause_t:
  *     type(1) + reset_cause(1) + last_stage_before_reset(1) + crc(2) = 5
  *
+ *   pkt_perimeter_wire_t:
+ *     type(1) + signal_code(1) + left/center/right correlations(12) +
+ *     crc(2) = 16
+ *
  *   pkt_heartbeat_t:
  *     type(1) + emergency_requested(1) + emergency_release_requested(1) +
  *     crc(2) = 5
@@ -693,6 +772,32 @@ _Static_assert(sizeof(pkt_odometry_t) == 17u,
                "pkt_odometry_t layout unexpected");
 _Static_assert(sizeof(pkt_reset_cause_t) == 5u,
                "pkt_reset_cause_t layout unexpected");
+_Static_assert(sizeof(pkt_perimeter_wire_t) == 16u,
+               "pkt_perimeter_wire_t layout unexpected");
+_Static_assert(offsetof(pkt_perimeter_wire_t, type) == 0u,
+               "pkt_perimeter_wire_t.type offset unexpected");
+_Static_assert(offsetof(pkt_perimeter_wire_t, signal_code) == 1u,
+               "pkt_perimeter_wire_t.signal_code offset unexpected");
+_Static_assert(offsetof(pkt_perimeter_wire_t, left_correlation) == 2u,
+               "pkt_perimeter_wire_t.left_correlation offset unexpected");
+_Static_assert(offsetof(pkt_perimeter_wire_t, center_correlation) == 6u,
+               "pkt_perimeter_wire_t.center_correlation offset unexpected");
+_Static_assert(offsetof(pkt_perimeter_wire_t, right_correlation) == 10u,
+               "pkt_perimeter_wire_t.right_correlation offset unexpected");
+_Static_assert(offsetof(pkt_perimeter_wire_t, crc) == 14u,
+               "pkt_perimeter_wire_t.crc offset unexpected");
+_Static_assert(sizeof(pkt_perimeter_capability_rsp_t) == 6u,
+               "pkt_perimeter_capability_rsp_t layout unexpected");
+_Static_assert(offsetof(pkt_perimeter_capability_rsp_t, type) == 0u,
+               "pkt_perimeter_capability_rsp_t.type offset unexpected");
+_Static_assert(offsetof(pkt_perimeter_capability_rsp_t, available) == 1u,
+               "pkt_perimeter_capability_rsp_t.available offset unexpected");
+_Static_assert(offsetof(pkt_perimeter_capability_rsp_t, listening) == 2u,
+               "pkt_perimeter_capability_rsp_t.listening offset unexpected");
+_Static_assert(offsetof(pkt_perimeter_capability_rsp_t, signal_code) == 3u,
+               "pkt_perimeter_capability_rsp_t.signal_code offset unexpected");
+_Static_assert(offsetof(pkt_perimeter_capability_rsp_t, crc) == 4u,
+               "pkt_perimeter_capability_rsp_t.crc offset unexpected");
 _Static_assert(sizeof(pkt_heartbeat_t) == 5u,
                "pkt_heartbeat_t layout unexpected");
 _Static_assert(sizeof(pkt_hl_state_t) == 5u,
@@ -771,6 +876,21 @@ _Static_assert(offsetof(pkt_set_safety_limits_t, play_clear_ms) == 17u,
                "pkt_set_safety_limits_t.play_clear_ms offset unexpected");
 _Static_assert(offsetof(pkt_set_safety_limits_t, crc) == 19u,
                "pkt_set_safety_limits_t.crc offset unexpected");
+
+_Static_assert(sizeof(pkt_set_perimeter_listen_t) == 4u,
+               "pkt_set_perimeter_listen_t layout unexpected");
+_Static_assert(offsetof(pkt_set_perimeter_listen_t, type) == 0u,
+               "pkt_set_perimeter_listen_t.type offset unexpected");
+_Static_assert(offsetof(pkt_set_perimeter_listen_t, signal_code) == 1u,
+               "pkt_set_perimeter_listen_t.signal_code offset unexpected");
+_Static_assert(offsetof(pkt_set_perimeter_listen_t, crc) == 2u,
+               "pkt_set_perimeter_listen_t.crc offset unexpected");
+_Static_assert(sizeof(pkt_perimeter_capability_req_t) == 3u,
+               "pkt_perimeter_capability_req_t layout unexpected");
+_Static_assert(offsetof(pkt_perimeter_capability_req_t, type) == 0u,
+               "pkt_perimeter_capability_req_t.type offset unexpected");
+_Static_assert(offsetof(pkt_perimeter_capability_req_t, crc) == 1u,
+               "pkt_perimeter_capability_req_t.crc offset unexpected");
 #endif
 
 #ifdef __cplusplus

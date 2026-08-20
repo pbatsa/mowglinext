@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Guard: the COBS wire protocol cannot change without a version bump.
+"""Guard: the COBS wire protocol cannot change incompatibly without a version bump.
 
 The host↔firmware compatibility key is MOWGLI_PROTOCOL_VERSION (firmware
 mowgli_protocol.h) which the host mirrors as kMowgliProtocolVersion
@@ -13,8 +13,9 @@ Usage (from repo root):
     protocol_version_guard.py --check   # CI: FAIL on un-versioned wire drift
 
 --check fails if:
-  * the fingerprint changed vs the baseline (bump MOWGLI_PROTOCOL_VERSION and
-    re-run without --check to refresh the baseline), OR
+  * the compatibility fingerprint changed vs the baseline (bump
+    MOWGLI_PROTOCOL_VERSION and re-run without --check to refresh the baseline),
+    OR
   * firmware MOWGLI_PROTOCOL_VERSION != host kMowgliProtocolVersion (lockstep).
 """
 
@@ -36,6 +37,24 @@ HOST_HEADER = (
 )
 BASELINE = Path(__file__).resolve().parent / "protocol_baseline.json"
 
+# Additive packet IDs are allowed when old firmware safely ignores new host
+# commands and old hosts safely ignore new telemetry. Keep this list small and
+# only use it for optional extensions that do not alter any existing packet
+# layout or semantics.
+COMPAT_OPTIONAL_PACKET_IDS = {
+    "PKT_ID_PERIMETER_WIRE",
+    "PKT_ID_PERIMETER_CAPABILITY_RSP",
+    "PKT_ID_SET_PERIMETER_LISTEN",
+    "PKT_ID_PERIMETER_CAPABILITY_REQ",
+}
+
+COMPAT_OPTIONAL_STRUCTS = {
+    "pkt_perimeter_wire_t",
+    "pkt_perimeter_capability_rsp_t",
+    "pkt_set_perimeter_listen_t",
+    "pkt_perimeter_capability_req_t",
+}
+
 
 def _strip_comments(text):
     text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
@@ -55,25 +74,32 @@ def read_version(header, macro):
 
 
 def wire_fingerprint(header_text):
-    """sha256 over the normalized wire-defining tokens: every PKT_ID_* id and
-    every pkt_*_t struct body (comments + whitespace stripped, sorted so cosmetic
-    reordering of unrelated lines is stable)."""
+    """sha256 over normalized compatibility tokens.
+
+    The compatibility hash includes every non-optional PKT_ID_* id and
+    pkt_*_t struct body. Optional additive extension packets are excluded so
+    they can be added without forcing a mower-stopping protocol-version bump.
+    Comments + whitespace are stripped and tokens are sorted so cosmetic
+    reordering of unrelated lines is stable.
+    """
     src = _strip_comments(header_text)
     ids = re.findall(r"#define\s+(PKT_ID_\w+)\s+(0x[0-9A-Fa-f]+u?|\d+u?)", src)
-    structs = re.findall(
-        r"typedef\s+struct\s*\{.*?\}\s*(pkt_\w+_t)\s*;", src, flags=re.DOTALL
-    )
     struct_blocks = re.findall(
         r"typedef\s+struct\s*\{.*?\}\s*pkt_\w+_t\s*;", src, flags=re.DOTALL
     )
     tokens = []
     for name, value in ids:
+        if name in COMPAT_OPTIONAL_PACKET_IDS:
+            continue
         tokens.append(f"{name}={value.rstrip('u')}")
     for block in struct_blocks:
+        m = re.search(r"}\s*(pkt_\w+_t)\s*;", block)
+        if m and m.group(1) in COMPAT_OPTIONAL_STRUCTS:
+            continue
         tokens.append(re.sub(r"\s+", " ", block).strip())
     tokens.sort()
     joined = "\n".join(tokens)
-    return hashlib.sha256(joined.encode()).hexdigest(), len(struct_blocks), len(ids)
+    return hashlib.sha256(joined.encode()).hexdigest(), len(tokens), len(struct_blocks), len(ids)
 
 
 def main():
@@ -83,7 +109,7 @@ def main():
 
     fw_version = read_version(FW_HEADER, "MOWGLI_PROTOCOL_VERSION")
     host_version = read_version(HOST_HEADER, "kMowgliProtocolVersion")
-    digest, n_structs, n_ids = wire_fingerprint(FW_HEADER.read_text())
+    digest, n_tokens, n_structs, n_ids = wire_fingerprint(FW_HEADER.read_text())
 
     baseline = json.loads(BASELINE.read_text()) if BASELINE.exists() else None
 
@@ -111,7 +137,8 @@ def main():
         if ok:
             print(
                 f"OK: protocol v{fw_version} (host+firmware), "
-                f"{n_structs} structs / {n_ids} ids, fingerprint matches baseline."
+                f"{n_tokens} compatibility tokens "
+                f"({n_structs} structs / {n_ids} ids total), fingerprint matches baseline."
             )
         return 0 if ok else 1
 

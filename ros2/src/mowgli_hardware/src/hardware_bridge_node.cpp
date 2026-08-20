@@ -28,6 +28,7 @@
  *   ~/power         mowgli_interfaces/msg/Power
  *   ~/imu/data_raw  sensor_msgs/msg/Imu
  *   ~/wheel_odom    nav_msgs/msg/Odometry
+ *   ~/perimeter_wire mowgli_interfaces/msg/PerimeterWire
  *   ~/dock_heading  sensor_msgs/msg/Imu  (dock yaw while charging, remapped → /gnss/heading)
  *   /battery_state  sensor_msgs/msg/BatteryState  (for opennav_docking)
  *
@@ -37,6 +38,7 @@
  * Services:
  *   ~/mower_control  mowgli_interfaces/srv/MowerControl
  *   ~/emergency_stop mowgli_interfaces/srv/EmergencyStop
+ *   ~/set_perimeter_listen mowgli_interfaces/srv/SetPerimeterListen
  *
  * Parameters:
  *   serial_port      (string,  default "/dev/mowgli")
@@ -119,12 +121,14 @@ static const char* high_level_mode_name(const uint8_t mode)
 #include "mowgli_interfaces/msg/emergency.hpp"
 #include "mowgli_interfaces/msg/gnss_status.hpp"
 #include "mowgli_interfaces/msg/high_level_status.hpp"
+#include "mowgli_interfaces/msg/perimeter_wire.hpp"
 #include "mowgli_interfaces/msg/power.hpp"
 #include "mowgli_interfaces/msg/status.hpp"
 #include "mowgli_interfaces/msg/wheel_tick.hpp"
 #include "mowgli_interfaces/srv/emergency_stop.hpp"
 #include "mowgli_interfaces/srv/high_level_control.hpp"
 #include "mowgli_interfaces/srv/mower_control.hpp"
+#include "mowgli_interfaces/srv/set_perimeter_listen.hpp"
 #include "nav_msgs/msg/odometry.hpp"
 #include "rcl_interfaces/msg/parameter_descriptor.hpp"
 #include "rclcpp/rclcpp.hpp"
@@ -667,6 +671,9 @@ private:
     // diagnostically to inspect the chip and see chassis distortion.
     pub_mag_raw_ =
         create_publisher<sensor_msgs::msg::MagneticField>("~/imu/mag_raw", rclcpp::QoS(10));
+    pub_perimeter_wire_ =
+        create_publisher<mowgli_interfaces::msg::PerimeterWire>("~/perimeter_wire",
+                                                                rclcpp::SensorDataQoS());
     // ~/wheel_odom + ~/wheel_ticks are created by odometry_publisher_'s own
     // constructor (odometry_publisher_(*this) in the init-list) — see
     // odometry_publisher.hpp.
@@ -766,6 +773,14 @@ private:
                std::shared_ptr<std_srvs::srv::SetBool::Response> res)
         {
           on_set_firmware_debug(req, res);
+        });
+
+    srv_set_perimeter_listen_ = create_service<mowgli_interfaces::srv::SetPerimeterListen>(
+        "~/set_perimeter_listen",
+        [this](const std::shared_ptr<mowgli_interfaces::srv::SetPerimeterListen::Request> req,
+               std::shared_ptr<mowgli_interfaces::srv::SetPerimeterListen::Response> res)
+        {
+          on_set_perimeter_listen(req, res);
         });
   }
 
@@ -1034,6 +1049,12 @@ private:
       case PACKET_ID_LL_RESET_CAUSE:
         handle_reset_cause(data, len);
         break;
+      case PACKET_ID_LL_PERIMETER_WIRE:
+        handle_perimeter_wire(data, len);
+        break;
+      case PACKET_ID_LL_PERIMETER_CAPABILITY_RSP:
+        handle_perimeter_capability_rsp(data, len);
+        break;
       case PACKET_ID_LL_IMU:
         handle_imu(data, len);
         break;
@@ -1119,6 +1140,62 @@ private:
     }
   }
 
+  void handle_perimeter_wire(const uint8_t* data, std::size_t len)
+  {
+    if (len < sizeof(LlPerimeterWire))
+    {
+      RCLCPP_WARN(get_logger(),
+                  "Perimeter-wire packet too short: %zu < %zu",
+                  len,
+                  sizeof(LlPerimeterWire));
+      return;
+    }
+
+    LlPerimeterWire pkt{};
+    std::memcpy(&pkt, data, sizeof(LlPerimeterWire));
+
+    perimeter_available_ = true;
+    perimeter_listen_signal_code_ = pkt.signal_code;
+
+    auto msg = mowgli_interfaces::msg::PerimeterWire{};
+    msg.header.stamp = now();
+    msg.header.frame_id = "base_link";
+    msg.listening = pkt.signal_code != mowgli_interfaces::msg::PerimeterWire::SIGNAL_OFF;
+    msg.signal_code = pkt.signal_code;
+    msg.left_correlation = pkt.left_correlation;
+    msg.center_correlation = pkt.center_correlation;
+    msg.right_correlation = pkt.right_correlation;
+    pub_perimeter_wire_->publish(msg);
+  }
+
+  void handle_perimeter_capability_rsp(const uint8_t* data, std::size_t len)
+  {
+    if (len < sizeof(LlPerimeterCapabilityRsp))
+    {
+      RCLCPP_WARN(get_logger(),
+                  "Perimeter capability packet too short: %zu < %zu",
+                  len,
+                  sizeof(LlPerimeterCapabilityRsp));
+      return;
+    }
+
+    LlPerimeterCapabilityRsp pkt{};
+    std::memcpy(&pkt, data, sizeof(LlPerimeterCapabilityRsp));
+
+    const bool was_available = perimeter_available_;
+    perimeter_capability_known_ = true;
+    perimeter_available_ = pkt.available != 0u;
+    perimeter_listen_signal_code_ = pkt.signal_code;
+    if (perimeter_available_ != was_available)
+    {
+      RCLCPP_INFO(get_logger(),
+                  "Perimeter firmware capability: %s (listening=%s signal=%u).",
+                  perimeter_available_ ? "available" : "not available",
+                  pkt.listening != 0u ? "true" : "false",
+                  static_cast<unsigned>(pkt.signal_code));
+    }
+  }
+
   void handle_status(const uint8_t* data, std::size_t len)
   {
     if (len < sizeof(LlStatus))
@@ -1200,6 +1277,7 @@ private:
       // Blade motor fields from live telemetry
       msg.mow_enabled = mow_enabled_;
       msg.firmware_debug_enabled = firmware_debug_enabled_;
+      msg.perimeter_available = perimeter_available_;
       msg.mower_esc_status = blade_active_ ? 1u : 0u;
       msg.mower_motor_rpm = blade_rpm_;
       msg.mower_motor_temperature = blade_temperature_;
@@ -2134,6 +2212,20 @@ private:
     }
   }
 
+  bool send_set_perimeter_listen(const uint8_t signal_code)
+  {
+    if (!serial_)
+    {
+      return false;
+    }
+
+    LlSetPerimeterListen pkt{};
+    pkt.type = PACKET_ID_LL_SET_PERIMETER_LISTEN;
+    pkt.signal_code = signal_code;
+    return send_raw_packet(reinterpret_cast<const uint8_t*>(&pkt),
+                           sizeof(LlSetPerimeterListen) - sizeof(uint16_t));
+  }
+
   void on_reboot_board(const std::shared_ptr<std_srvs::srv::Trigger::Request>,
                        std::shared_ptr<std_srvs::srv::Trigger::Response> res)
   {
@@ -2195,6 +2287,48 @@ private:
     res->success = true;
     res->message =
         req->data ? "firmware debug enable request sent" : "firmware debug disable request sent";
+  }
+
+  void on_set_perimeter_listen(
+      const std::shared_ptr<mowgli_interfaces::srv::SetPerimeterListen::Request> req,
+      std::shared_ptr<mowgli_interfaces::srv::SetPerimeterListen::Response> res)
+  {
+    if (!serial_ || !serial_->is_open())
+    {
+      res->success = false;
+      res->message = "serial port not open";
+      return;
+    }
+
+    if (perimeter_capability_known_ && !perimeter_available_)
+    {
+      res->success = false;
+      res->message = "firmware reports perimeter support is not available";
+      return;
+    }
+
+    if (!send_set_perimeter_listen(req->signal_code))
+    {
+      res->success = false;
+      res->message = "failed to send perimeter listen command";
+      return;
+    }
+
+    perimeter_listen_signal_code_ = req->signal_code;
+    res->success = true;
+    if (req->signal_code == mowgli_interfaces::srv::SetPerimeterListen::Request::SIGNAL_OFF)
+    {
+      res->message = "perimeter listening disabled";
+    }
+    else if (perimeter_available_)
+    {
+      res->message = "perimeter listen command sent";
+    }
+    else
+    {
+      send_perimeter_capability_request();
+      res->message = "perimeter listen command sent; firmware capability is not confirmed yet";
+    }
   }
 
   void handle_blade_status(const uint8_t* data, std::size_t len)
@@ -2290,6 +2424,11 @@ private:
     {
       RCLCPP_INFO(get_logger(), "[FW_DIAG] Firmware debug disabled.");
     }
+
+    if (fw_compatible_)
+    {
+      send_perimeter_capability_request();
+    }
   }
 
   // Reset the handshake state on (re)connect so a reflashed board is re-checked.
@@ -2299,6 +2438,8 @@ private:
     fw_compatible_ = false;
     fw_protocol_version_ = 0u;
     fw_version_str_.clear();
+    perimeter_capability_known_ = false;
+    perimeter_available_ = false;
     config_req_resend_count_ = 5;
     config_control_resend_count_ = 0;
     fw_handshake_start_ = now();
@@ -2346,6 +2487,18 @@ private:
     pkt.flags = firmware_debug_requested_ ? CONFIG_FLAG_FIRMWARE_DEBUG : 0u;
     return send_raw_packet(reinterpret_cast<const uint8_t*>(&pkt),
                            sizeof(LlConfigReq) - sizeof(uint16_t));
+  }
+
+  bool send_perimeter_capability_request()
+  {
+    if (!serial_)
+    {
+      return false;
+    }
+    LlPerimeterCapabilityReq pkt{};
+    pkt.type = PACKET_ID_LL_PERIMETER_CAPABILITY_REQ;
+    return send_raw_packet(reinterpret_cast<const uint8_t*>(&pkt),
+                           sizeof(LlPerimeterCapabilityReq) - sizeof(uint16_t));
   }
 
   void clear_firmware_debug_state_for_reconnect()
@@ -2548,6 +2701,7 @@ private:
   rclcpp::Publisher<mowgli_interfaces::msg::Power>::SharedPtr pub_power_;
   rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr pub_imu_;
   rclcpp::Publisher<sensor_msgs::msg::MagneticField>::SharedPtr pub_mag_raw_;
+  rclcpp::Publisher<mowgli_interfaces::msg::PerimeterWire>::SharedPtr pub_perimeter_wire_;
   // Owns ~/wheel_odom + ~/wheel_ticks and all wheel-tick decode/aggregation
   // state (see odometry_publisher.hpp — extracted from the former inline
   // handle_odometry() as part of the god-node breakup, task #11).
@@ -2564,6 +2718,7 @@ private:
   rclcpp::Service<mowgli_interfaces::srv::EmergencyStop>::SharedPtr srv_emergency_stop_;
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr srv_reboot_board_;
   rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr srv_set_firmware_debug_;
+  rclcpp::Service<mowgli_interfaces::srv::SetPerimeterListen>::SharedPtr srv_set_perimeter_listen_;
 
   // Client (not server, unlike the srv_* members above): calls
   // behavior_tree_node's high_level_control service on panel button presses.
@@ -2590,6 +2745,9 @@ private:
 
   std::unique_ptr<SerialPort> serial_;
   PacketHandler packet_handler_;
+  uint8_t perimeter_listen_signal_code_{mowgli_interfaces::msg::PerimeterWire::SIGNAL_OFF};
+  bool perimeter_capability_known_{false};
+  bool perimeter_available_{false};
 
   // ---------------------------------------------------------------------------
   // Members: stateful state communicated to the STM32

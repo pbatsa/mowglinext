@@ -28,6 +28,7 @@ set(msg_files
   "msg/ObstacleArray.msg"
   "msg/TrackedObstacle.msg"
   "msg/DockCalibrationStatus.msg"
+  "msg/PerimeterWire.msg"
 )
 
 # Declare service files
@@ -46,6 +47,7 @@ set(srv_files
   "srv/GetRecoveryPoint.srv"
   "srv/StartInArea.srv"
   "srv/PromoteObstacle.srv"
+  "srv/SetPerimeterListen.srv"
 )
 
 # Declare action files

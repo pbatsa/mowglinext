@@ -69,6 +69,14 @@ TEST(ProtocolSizes, ResetCausePacketSize)
   EXPECT_EQ(sizeof(LlResetCause), 5u);
 }
 
+TEST(ProtocolSizes, PerimeterPacketSizes)
+{
+  EXPECT_EQ(sizeof(LlPerimeterWire), 16u);
+  EXPECT_EQ(sizeof(LlPerimeterCapabilityRsp), 6u);
+  EXPECT_EQ(sizeof(LlSetPerimeterListen), 4u);
+  EXPECT_EQ(sizeof(LlPerimeterCapabilityReq), 3u);
+}
+
 TEST(ProtocolSizes, HeartbeatPacketSize)
 {
   EXPECT_EQ(sizeof(LlHeartbeat), 5u);
@@ -142,6 +150,8 @@ TEST(ProtocolIds, PacketIdValues)
   EXPECT_EQ(PACKET_ID_LL_UI_EVENT, 0x03);
   EXPECT_EQ(PACKET_ID_LL_ODOMETRY, 0x04);
   EXPECT_EQ(PACKET_ID_LL_RESET_CAUSE, 0x06);
+  EXPECT_EQ(PACKET_ID_LL_PERIMETER_WIRE, 0x07);
+  EXPECT_EQ(PACKET_ID_LL_PERIMETER_CAPABILITY_RSP, 0x08);
   EXPECT_EQ(PACKET_ID_LL_HIGH_LEVEL_CONFIG_REQ, 0x11);
   EXPECT_EQ(PACKET_ID_LL_HIGH_LEVEL_CONFIG_RSP, 0x12);
   EXPECT_EQ(PACKET_ID_LL_HEARTBEAT, 0x42);
@@ -150,6 +160,11 @@ TEST(ProtocolIds, PacketIdValues)
   EXPECT_EQ(PACKET_ID_LL_CMD_BLADE, 0x51);
   EXPECT_EQ(PACKET_ID_LL_REBOOT, 0x52);
   EXPECT_EQ(PACKET_ID_LL_SET_DRIVE_PID, 0x54);
+  EXPECT_EQ(PACKET_ID_LL_SET_YAW_PID, 0x55);
+  EXPECT_EQ(PACKET_ID_LL_SET_KINEMATICS, 0x56);
+  EXPECT_EQ(PACKET_ID_LL_SET_SAFETY_LIMITS, 0x57);
+  EXPECT_EQ(PACKET_ID_LL_SET_PERIMETER_LISTEN, 0x58);
+  EXPECT_EQ(PACKET_ID_LL_PERIMETER_CAPABILITY_REQ, 0x59);
 }
 
 // ---------------------------------------------------------------------------
@@ -323,6 +338,32 @@ TEST(ProtocolRoundtrip, ResetCausePacket)
   roundtrip_struct(pkt);
 }
 
+TEST(ProtocolRoundtrip, PerimeterWirePacket)
+{
+  LlPerimeterWire pkt{};
+  pkt.type = PACKET_ID_LL_PERIMETER_WIRE;
+  pkt.signal_code = 1;
+  pkt.left_correlation = -12.5f;
+  pkt.center_correlation = 3.25f;
+  pkt.right_correlation = 19.75f;
+
+  roundtrip_struct(pkt);
+}
+
+TEST(ProtocolRoundtrip, PerimeterCapabilityPackets)
+{
+  LlPerimeterCapabilityReq req{};
+  req.type = PACKET_ID_LL_PERIMETER_CAPABILITY_REQ;
+  roundtrip_struct(req);
+
+  LlPerimeterCapabilityRsp rsp{};
+  rsp.type = PACKET_ID_LL_PERIMETER_CAPABILITY_RSP;
+  rsp.available = 1;
+  rsp.listening = 1;
+  rsp.signal_code = 2;
+  roundtrip_struct(rsp);
+}
+
 TEST(ProtocolRoundtrip, HighLevelStatePacket)
 {
   LlHighLevelState pkt{};
@@ -353,6 +394,15 @@ TEST(ProtocolRoundtrip, SetDrivePidPacket)
   pkt.kd = 0.0f;
   pkt.integral_limit = 100.0f;
   pkt.pwm_per_mps = 300.0f;
+
+  roundtrip_struct(pkt);
+}
+
+TEST(ProtocolRoundtrip, SetPerimeterListenPacket)
+{
+  LlSetPerimeterListen pkt{};
+  pkt.type = PACKET_ID_LL_SET_PERIMETER_LISTEN;
+  pkt.signal_code = 1;
 
   roundtrip_struct(pkt);
 }

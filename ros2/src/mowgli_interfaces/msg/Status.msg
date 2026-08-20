@@ -22,6 +22,7 @@ bool sound_module_busy
 bool ui_board_available
 bool mow_enabled
 bool firmware_debug_enabled
+bool perimeter_available
 
 uint8 mower_esc_status
 float32 mower_esc_temperature

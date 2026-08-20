@@ -106,7 +106,7 @@ void Perimeter_vInit(void){
     ADC_Handle.Init.ScanConvMode = ADC_SCAN_DISABLE;
     ADC_Handle.Init.ContinuousConvMode = ENABLE;
     ADC_Handle.Init.DiscontinuousConvMode = DISABLE;
-    ADC_Handle.Init.ExternalTrigConv = ADC_EXTERNALTRIG_EDGE_NONE;
+    ADC_Handle.Init.ExternalTrigConv = ADC_SOFTWARE_START;
     ADC_Handle.Init.DataAlign = ADC_DATAALIGN_RIGHT;
     ADC_Handle.Init.NbrOfConversion = 1;
     if (HAL_ADC_Init(&ADC_Handle) != HAL_OK)
