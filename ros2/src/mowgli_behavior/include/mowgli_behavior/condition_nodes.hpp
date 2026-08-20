@@ -258,6 +258,10 @@ public:
 ///   max_gnss_status_age_sec       (double, default 2.0)
 ///   max_msm_age_sec               (double, default 3.0)
 ///   max_degraded_drift_m          (double, default 0.0 disables distance gate)
+///
+/// The guard deliberately ignores the short undock BackUp action: docked GPS is
+/// often degraded by the charger/canopy, and the robot must finish reversing
+/// into open sky before localization hold can safely take over.
 class IsLocalizationUnsafe : public BT::ConditionNode
 {
 public:

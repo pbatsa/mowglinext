@@ -250,6 +250,7 @@ BT::NodeStatus IsLocalizationUnsafe::tick()
   bool has_status = false;
   bool gps_is_fixed = false;
   bool charging = false;
+  bool undock_backup_active = false;
   bool lidar_enabled = false;
   bool has_wheel_odom = false;
   double wheel_odom_x = 0.0;
@@ -261,6 +262,7 @@ BT::NodeStatus IsLocalizationUnsafe::tick()
     has_status = ctx->has_gnss_status;
     gps_is_fixed = ctx->gps_is_fixed;
     charging = ctx->latest_power.charger_enabled;
+    undock_backup_active = ctx->undock_backup_active;
     lidar_enabled = ctx->lidar_enabled;
     has_wheel_odom = ctx->has_wheel_odom;
     wheel_odom_x = ctx->wheel_odom_x;
@@ -268,6 +270,14 @@ BT::NodeStatus IsLocalizationUnsafe::tick()
   }
 
   if (charging)
+  {
+    rtk_float_timer_set_ = false;
+    corrections_missing_timer_set_ = false;
+    degraded_drift_start_set_ = false;
+    return BT::NodeStatus::FAILURE;
+  }
+
+  if (undock_backup_active)
   {
     rtk_float_timer_set_ = false;
     corrections_missing_timer_set_ = false;

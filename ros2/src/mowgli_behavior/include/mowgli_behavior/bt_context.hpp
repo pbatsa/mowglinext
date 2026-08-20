@@ -317,6 +317,12 @@ struct BTContext
   std::vector<std::pair<double, double>> undock_gps_samples;
   static constexpr size_t kUndockGpsSamplesCap = 200;
 
+  /// True only while the deliberate dock BackUp action is running. The robot
+  /// must be allowed to finish this open-loop reverse before GNSS localization
+  /// safety can pause it; otherwise a dock-canopy RTK float can strand the
+  /// robot halfway off the charger.
+  bool undock_backup_active{false};
+
   // -----------------------------------------------------------------------
   // Obstacle-stuck recovery (collision_monitor wedging)
   // -----------------------------------------------------------------------

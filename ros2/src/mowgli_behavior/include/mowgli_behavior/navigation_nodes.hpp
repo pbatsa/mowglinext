@@ -219,7 +219,10 @@ public:
   static BT::PortsList providedPorts()
   {
     return {BT::InputPort<double>("backup_dist", 0.5, "Distance to reverse (m)"),
-            BT::InputPort<double>("backup_speed", 0.15, "Reverse speed (m/s)")};
+            BT::InputPort<double>("backup_speed", 0.15, "Reverse speed (m/s)"),
+            BT::InputPort<bool>("suppress_localization_hold",
+                                false,
+                                "Keep localization safety from interrupting this backup")};
   }
 
   BT::NodeStatus onStart() override;
@@ -234,6 +237,7 @@ private:
   GoalHandle::SharedPtr goal_handle_;
   std::shared_future<WrappedResult> result_future_;
   bool result_requested_{false};
+  bool suppress_localization_hold_{false};
 };
 
 // ---------------------------------------------------------------------------

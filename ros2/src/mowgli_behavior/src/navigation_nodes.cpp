@@ -825,6 +825,7 @@ BT::NodeStatus BackUp::onStart()
   double speed = 0.15;
   getInput("backup_dist", dist);
   getInput("backup_speed", speed);
+  getInput("suppress_localization_hold", suppress_localization_hold_);
 
   auto goal_msg = BackUpAction::Goal{};
   // BackUp target is negative X (reverse) in base_link frame
@@ -839,6 +840,11 @@ BT::NodeStatus BackUp::onStart()
   goal_handle_future_ = action_client_->async_send_goal(goal_msg);
   goal_handle_ = nullptr;
   result_requested_ = false;
+  if (suppress_localization_hold_)
+  {
+    std::lock_guard<std::mutex> lock(ctx->context_mutex);
+    ctx->undock_backup_active = true;
+  }
   return BT::NodeStatus::RUNNING;
 }
 
@@ -856,6 +862,11 @@ BT::NodeStatus BackUp::onRunning()
     goal_handle_ = goal_handle_future_.get();
     if (!goal_handle_)
     {
+      if (suppress_localization_hold_)
+      {
+        std::lock_guard<std::mutex> lock(ctx->context_mutex);
+        ctx->undock_backup_active = false;
+      }
       RCLCPP_ERROR(ctx->node->get_logger(), "BackUp: goal rejected");
       return BT::NodeStatus::FAILURE;
     }
@@ -874,6 +885,11 @@ BT::NodeStatus BackUp::onRunning()
   }
 
   auto wrapped = result_future_.get();
+  if (suppress_localization_hold_)
+  {
+    std::lock_guard<std::mutex> lock(ctx->context_mutex);
+    ctx->undock_backup_active = false;
+  }
   if (wrapped.code == rclcpp_action::ResultCode::SUCCEEDED)
   {
     RCLCPP_INFO(ctx->node->get_logger(), "BackUp: complete");
@@ -888,9 +904,14 @@ BT::NodeStatus BackUp::onRunning()
 
 void BackUp::onHalted()
 {
+  auto ctx = config().blackboard->get<std::shared_ptr<BTContext>>("context");
+  if (suppress_localization_hold_)
+  {
+    std::lock_guard<std::mutex> lock(ctx->context_mutex);
+    ctx->undock_backup_active = false;
+  }
   if (goal_handle_)
   {
-    auto ctx = config().blackboard->get<std::shared_ptr<BTContext>>("context");
     action_client_->async_cancel_goal(goal_handle_);
     RCLCPP_INFO(ctx->node->get_logger(), "BackUp: halted, goal cancelled");
   }

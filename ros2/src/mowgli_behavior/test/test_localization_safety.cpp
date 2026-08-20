@@ -126,6 +126,14 @@ TEST_F(LocalizationSafetyTest, ChargingDoesNotBlockWithoutStatus)
   EXPECT_EQ(tree.tickOnce(), BT::NodeStatus::FAILURE);
 }
 
+TEST_F(LocalizationSafetyTest, UndockBackupDoesNotBlockWithoutStatus)
+{
+  ctx->undock_backup_active = true;
+  auto tree = makeTree(R"(enabled="true")");
+
+  EXPECT_EQ(tree.tickOnce(), BT::NodeStatus::FAILURE);
+}
+
 TEST_F(LocalizationSafetyTest, MissingStatusBlocksMotion)
 {
   auto tree = makeTree(R"(enabled="true")");

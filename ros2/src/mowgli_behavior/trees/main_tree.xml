@@ -480,7 +480,8 @@
                    given distance. undock_distance must be > 0.5 m so
                    CalibrateHeadingFromUndock has enough GPS displacement
                    to resolve the initial heading accurately. -->
-              <BackUp backup_dist="{undock_distance}" backup_speed="{undock_speed}"/>
+              <BackUp backup_dist="{undock_distance}" backup_speed="{undock_speed}"
+                      suppress_localization_hold="true"/>
               <!-- Wait for RTK Fixed after undock. The dock often has a
                    metal canopy that attenuates GPS; once the robot is 2 m
                    out the F9P should re-acquire quickly. Timeout proceeds
@@ -580,7 +581,8 @@
                        uses geometric distance to dock pose which fails with
                        RTK drift near the dock canopy. BackUp reliably reverses
                        off the dock via Nav2 behavior_server. -->
-                        <BackUp backup_dist="{undock_distance}" backup_speed="{undock_speed}"/>
+                        <BackUp backup_dist="{undock_distance}" backup_speed="{undock_speed}"
+                                suppress_localization_hold="true"/>
                         <Sequence>
                           <RecordResumeUndockFailure/>
                           <ClearCommand/>
