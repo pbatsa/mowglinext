@@ -224,11 +224,15 @@ BT::NodeStatus IsLocalizationUnsafe::tick()
 
   bool enabled = true;
   getInput<bool>("enabled", enabled);
-  if (!enabled)
+  auto reset_timers = [this]()
   {
     rtk_float_timer_set_ = false;
     corrections_missing_timer_set_ = false;
     degraded_drift_start_set_ = false;
+  };
+  if (!enabled)
+  {
+    reset_timers();
     return BT::NodeStatus::FAILURE;
   }
 
@@ -251,6 +255,7 @@ BT::NodeStatus IsLocalizationUnsafe::tick()
   bool gps_is_fixed = false;
   bool charging = false;
   bool undock_backup_active = false;
+  std::chrono::steady_clock::time_point undock_localization_grace_until;
   bool lidar_enabled = false;
   bool has_wheel_odom = false;
   double wheel_odom_x = 0.0;
@@ -263,25 +268,25 @@ BT::NodeStatus IsLocalizationUnsafe::tick()
     gps_is_fixed = ctx->gps_is_fixed;
     charging = ctx->latest_power.charger_enabled;
     undock_backup_active = ctx->undock_backup_active;
+    undock_localization_grace_until = ctx->undock_localization_grace_until;
     lidar_enabled = ctx->lidar_enabled;
     has_wheel_odom = ctx->has_wheel_odom;
     wheel_odom_x = ctx->wheel_odom_x;
     wheel_odom_y = ctx->wheel_odom_y;
   }
 
+  const auto now = std::chrono::steady_clock::now();
+  const bool post_undock_grace_active = now < undock_localization_grace_until;
+
   if (charging)
   {
-    rtk_float_timer_set_ = false;
-    corrections_missing_timer_set_ = false;
-    degraded_drift_start_set_ = false;
+    reset_timers();
     return BT::NodeStatus::FAILURE;
   }
 
-  if (undock_backup_active)
+  if (undock_backup_active || post_undock_grace_active)
   {
-    rtk_float_timer_set_ = false;
-    corrections_missing_timer_set_ = false;
-    degraded_drift_start_set_ = false;
+    reset_timers();
     return BT::NodeStatus::FAILURE;
   }
 
@@ -320,7 +325,6 @@ BT::NodeStatus IsLocalizationUnsafe::tick()
     return false;
   };
 
-  const auto now = std::chrono::steady_clock::now();
   if (!has_status || status_time.time_since_epoch().count() == 0)
   {
     RCLCPP_WARN_THROTTLE(ctx->node->get_logger(),

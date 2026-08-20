@@ -134,6 +134,14 @@ TEST_F(LocalizationSafetyTest, UndockBackupDoesNotBlockWithoutStatus)
   EXPECT_EQ(tree.tickOnce(), BT::NodeStatus::FAILURE);
 }
 
+TEST_F(LocalizationSafetyTest, PostUndockGraceDoesNotBlockWithoutStatus)
+{
+  ctx->undock_localization_grace_until = std::chrono::steady_clock::now() + 1s;
+  auto tree = makeTree(R"(enabled="true")");
+
+  EXPECT_EQ(tree.tickOnce(), BT::NodeStatus::FAILURE);
+}
+
 TEST_F(LocalizationSafetyTest, MissingStatusBlocksMotion)
 {
   auto tree = makeTree(R"(enabled="true")");

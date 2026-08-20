@@ -322,6 +322,10 @@ struct BTContext
   /// safety can pause it; otherwise a dock-canopy RTK float can strand the
   /// robot halfway off the charger.
   bool undock_backup_active{false};
+  /// Short grace period after a deliberate undock BackUp completes. This lets
+  /// the post-undock WaitForGpsFix node hold position and acquire RTK Fixed
+  /// instead of the root localization guard preempting it immediately.
+  std::chrono::steady_clock::time_point undock_localization_grace_until{};
 
   // -----------------------------------------------------------------------
   // Obstacle-stuck recovery (collision_monitor wedging)

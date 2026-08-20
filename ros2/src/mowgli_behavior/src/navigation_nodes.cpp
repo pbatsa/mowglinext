@@ -892,6 +892,12 @@ BT::NodeStatus BackUp::onRunning()
   }
   if (wrapped.code == rclcpp_action::ResultCode::SUCCEEDED)
   {
+    if (suppress_localization_hold_)
+    {
+      std::lock_guard<std::mutex> lock(ctx->context_mutex);
+      ctx->undock_localization_grace_until =
+          std::chrono::steady_clock::now() + std::chrono::seconds(25);
+    }
     RCLCPP_INFO(ctx->node->get_logger(), "BackUp: complete");
     return BT::NodeStatus::SUCCESS;
   }
