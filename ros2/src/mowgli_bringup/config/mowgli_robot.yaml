@@ -142,9 +142,11 @@ mowgli:
     # cycles in eight minutes with FollowStrip pinned at 0 %, a livelock.
     # See mowgli_behavior/localization_health.hpp for the full derivation.
     #
-    # Pause above this receiver-reported horizontal accuracy, resume below the
-    # tighter one. Defaults sit far above RTK-Fixed (~0.015 m) and ordinary
-    # RTK-Float, but well under the ~1.5 m plain-GPS fallback being caught.
+    # Conservative GNSS-only field policy: RTK Float is not trusted even when
+    # the receiver reports a small horizontal accuracy. The existing pause and
+    # resume persistence below prevents per-epoch fix flicker from chattering.
+    loc_require_rtk_fixed: true
+    # Used when strict RTK-Fixed mode is disabled.
     loc_gnss_acc_pause_m: 0.30
     loc_gnss_acc_resume_m: 0.15
     # /gps/status older than this counts as a dead GNSS feed [s].
@@ -285,6 +287,7 @@ mowgli:
     battery_critical_voltage: 23.0 # immediate dock
     battery_full_percent: 95.0     # resume mowing above this %
     battery_low_percent: 20.0      # start docking
+    battery_low_persist_s: 10.0    # threshold must stay low this long before docking
     battery_critical_percent: 10.0 # emergency dock
     battery_critical_recovery_percent: 30.0 # leave critical-battery state once charged above this %
                                             # (hysteresis upper bound; must be > battery_critical_percent)
@@ -396,7 +399,7 @@ mowgli:
     # approaches invalid. This does NOT change coverage/headland paths; use
     # chassis_safety_inset for mowing geometry. Try 0.30 m for about 1 ft of
     # transit berth, and keep at 0.0 for narrow corridors.
-    boundary_inner_margin_m: 0.0
+    boundary_inner_margin_m: 0.20
     # path_spacing: DEPRECATED / informational — no ROS2 node reads it. F2C swath
     # spacing is driven by tool_width (coverage_server.operation_width); a separate
     # spacing value re-opens the swath-gap bug, so this only mirrors tool_width.

@@ -159,10 +159,16 @@ BT::NodeStatus ClearCommand::tick()
 BT::NodeStatus EndSession::tick()
 {
   auto ctx = config().blackboard->get<std::shared_ptr<BTContext>>("context");
+  bool preserve_coverage_resume = false;
+  if (auto res = getInput<bool>("preserve_coverage_resume"))
+  {
+    preserve_coverage_resume = res.value();
+  }
   RCLCPP_INFO(ctx->node->get_logger(),
-              "EndSession: clearing per-session flags "
-              "(yaw_seeded=%s, skipped_swaths=%d, undock_recorded=%s, "
+              "EndSession: clearing per-session flags (preserve_coverage_resume=%s, "
+              "yaw_seeded=%s, skipped_swaths=%d, undock_recorded=%s, "
               "obstacle_backoffs=%d)",
+              preserve_coverage_resume ? "true" : "false",
               ctx->yaw_seeded_this_session ? "true" : "false",
               ctx->skipped_swaths,
               ctx->undock_start_recorded ? "true" : "false",
@@ -198,28 +204,29 @@ BT::NodeStatus EndSession::tick()
   ctx->start_blocked_escape_armed = false;
   ctx->last_motion_valid = false;
   ctx->last_motion_cmd_vx = 0.0;
-  // Swath-completion model (replaces the cell coverage grid): clear the
-  // per-area completed-swath sets, swath counts, and the completed-area set so
-  // the next COMMAND_START re-plans and re-mows every area from swath 0.
-  // Leaking these across sessions would make the next session skip every
-  // already-mowed swath (the grid used to "decay"; the swath model resets at
-  // the session boundary instead).
-  ctx->area_completed_swaths.clear();
-  ctx->area_swath_count.clear();
-  ctx->area_resume_pose_index.clear();
-  ctx->area_path_pose_count.clear();
-  ctx->area_plan_fingerprint.clear();
-  ctx->completed_areas.clear();
-  // Drop any "mow only area N" constraint from a targeted run (~/start_in_area)
-  // at the same boundary as every other per-session set, so the next plain
-  // COMMAND_START mows the whole lawn again. The clip is session state (it must
-  // survive GetNextUnmowedArea re-entering after the targeted area finishes, or
-  // the run rolls over into the next area), so THIS is where it dies.
-  clearSingleAreaMode(*ctx);
-  // Remove the on-disk resume snapshot too: this is a real session boundary, so
-  // the next COMMAND_START must start fresh rather than resume a finished (or
-  // aborted-and-docked) session from the persisted cursor.
-  clearCoverageResumeState(*ctx);
+  if (preserve_coverage_resume)
+  {
+    // A failed return or charger does not mean the grass was completed. Keep
+    // the swath high-water marks, cursor, completed areas, and any targeted-area
+    // constraint, then refresh the atomic snapshot for the next Start command.
+    // Persist command 0 so a container restart cannot autonomously undock from
+    // a failed-docking state; the operator explicitly resumes with Start.
+    ctx->current_command = 0;
+    saveCoverageResumeState(*ctx);
+  }
+  else
+  {
+    // Confirmed completion or an explicit recording-session boundary starts a
+    // fresh future run.
+    ctx->area_completed_swaths.clear();
+    ctx->area_swath_count.clear();
+    ctx->area_resume_pose_index.clear();
+    ctx->area_path_pose_count.clear();
+    ctx->area_plan_fingerprint.clear();
+    ctx->completed_areas.clear();
+    clearSingleAreaMode(*ctx);
+    clearCoverageResumeState(*ctx);
+  }
   return BT::NodeStatus::SUCCESS;
 }
 

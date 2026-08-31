@@ -147,7 +147,7 @@ protected:
                 </Sequence>
               </RetryUntilSuccessful>
               <Sequence name="CriticalChargerFailed">
-                <EndSession/>
+                <EndSession preserve_coverage_resume="true"/>
                 <ClearCommand/>
                 <AlwaysFailure/>
               </Sequence>
@@ -183,10 +183,10 @@ TEST_F(CriticalBatteryResumeTest, RecoveryAutoContinuesWithoutEndingSession)
   EXPECT_EQ(undock_count, 1);
 }
 
-// Dead charger: no charge progress MUST end the session (EndSession +
-// ClearCommand) and abort the branch with FAILURE so the undock tail is
-// SKIPPED — never resume mowing on a critical pack.
-TEST_F(CriticalBatteryResumeTest, DeadChargerEndsSessionAndSkipsUndock)
+// Dead charger: stop the active command and skip the undock tail, but retain
+// the coverage cursor so a later operator Start can resume after the charger
+// or docking fault is corrected.
+TEST_F(CriticalBatteryResumeTest, DeadChargerStopsCommandButPreservesCoverage)
 {
   ctx->current_command = 1;
   ctx->area_resume_pose_index[0] = 42;
@@ -196,9 +196,10 @@ TEST_F(CriticalBatteryResumeTest, DeadChargerEndsSessionAndSkipsUndock)
   auto tree = makeTree();
   EXPECT_EQ(tree.tickOnce(), BT::NodeStatus::FAILURE);
 
-  // Session ended: command cleared and resume cursor wiped.
+  // Active command cleared, but completed work remains resumable.
   EXPECT_EQ(ctx->current_command, 0);
-  EXPECT_TRUE(ctx->area_resume_pose_index.empty());
+  ASSERT_EQ(ctx->area_resume_pose_index.count(0), 1u);
+  EXPECT_EQ(ctx->area_resume_pose_index[0], 42u);
   // The undock/resume tail must NOT have run.
   EXPECT_EQ(undock_count, 0);
 }

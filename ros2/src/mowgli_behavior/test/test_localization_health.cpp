@@ -310,6 +310,58 @@ TEST(LocalizationHealthTest, GoodAccuracyOutranksUnknownRtkMode)
   EXPECT_FALSE(degraded);
 }
 
+TEST(LocalizationHealthTest, StrictModeRejectsOptimisticFloatAccuracy)
+{
+  LocalizationHealthCfg cfg;
+  cfg.require_rtk_fixed = true;
+  LocalizationHealthMonitor mon{cfg};
+
+  const bool degraded = RunFor(&mon,
+                               0.0,
+                               10.0,
+                               [](double now)
+                               {
+                                 LocalizationObservation obs;
+                                 obs.gnss_seen = true;
+                                 obs.gnss_stamp_s = now;
+                                 obs.rtk_mode = RtkMode::kFloat;
+                                 obs.gnss_accuracy_m = 0.014;
+                                 return obs;
+                               });
+
+  EXPECT_TRUE(degraded);
+  EXPECT_EQ(mon.fault(), LocalizationFault::kRtkNotFixed);
+}
+
+TEST(LocalizationHealthTest, StrictModeRecoversOnlyOnFixed)
+{
+  LocalizationHealthCfg cfg;
+  cfg.require_rtk_fixed = true;
+  LocalizationHealthMonitor mon{cfg};
+
+  ASSERT_TRUE(RunFor(&mon,
+                     0.0,
+                     10.0,
+                     [](double now)
+                     {
+                       LocalizationObservation obs;
+                       obs.gnss_seen = true;
+                       obs.gnss_stamp_s = now;
+                       obs.rtk_mode = RtkMode::kFloat;
+                       obs.gnss_accuracy_m = 0.01;
+                       return obs;
+                     }));
+
+  RunFor(&mon,
+         20.0,
+         4.0,
+         [](double now)
+         {
+           return HealthyFix(now);
+         });
+  EXPECT_FALSE(mon.degraded());
+}
+
 // ── Divergence backstop ────────────────────────────────────────────────────
 
 TEST(LocalizationHealthTest, SigmaBackstopCatchesLocalizerDivergence)

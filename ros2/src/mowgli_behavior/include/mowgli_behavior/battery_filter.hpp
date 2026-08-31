@@ -99,6 +99,39 @@ private:
   double last_sec_{0.0};
 };
 
+/// Requires a low-battery condition to remain continuously true before the
+/// normal return-to-dock branch may start. Critical-battery handling uses a
+/// separate immediate guard and does not pass through this timer.
+class SustainedLowBattery
+{
+public:
+  bool update(double now_sec, bool low, double hold_sec)
+  {
+    if (!low)
+    {
+      reset();
+      return false;
+    }
+    if (hold_sec <= 0.0)
+    {
+      return true;
+    }
+    if (!low_since_sec_ || now_sec < *low_since_sec_)
+    {
+      low_since_sec_ = now_sec;
+    }
+    return now_sec - *low_since_sec_ >= hold_sec;
+  }
+
+  void reset()
+  {
+    low_since_sec_.reset();
+  }
+
+private:
+  std::optional<double> low_since_sec_;
+};
+
 /// Linear voltage → percent interpolation against the configured endpoints,
 /// clamped to [0, 100]. Returns 0 for a degenerate (non-positive) range.
 float batteryPercentFromVoltage(float voltage, float v_empty, float v_full);

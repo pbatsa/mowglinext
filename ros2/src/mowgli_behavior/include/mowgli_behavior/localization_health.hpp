@@ -70,9 +70,9 @@
 // inflation ceiling (~2.35 m worst case above) — hence a 5 m default with a
 // long persistence, which no pivot can reach or sustain.
 //
-// This only ever PAUSES blade-on mowing. Firmware remains the sole blade
-// safety authority, and BoundaryGuard still independently covers "the robot
-// left the area".
+// This pauses autonomous motion through the root LocalizationGuard. Firmware
+// remains the sole blade safety authority, and BoundaryGuard still
+// independently covers "the robot left the area".
 
 #pragma once
 
@@ -96,6 +96,7 @@ enum class RtkMode : uint8_t
 enum class LocalizationFault : uint8_t
 {
   kNone = 0,
+  kRtkNotFixed,  ///< strict mode requires RTK-Fixed and the receiver is not fixed
   kGnssAccuracy,  ///< reported horizontal accuracy exceeded the pause threshold
   kGnssFixLost,  ///< no accuracy available AND the receiver reports no RTK solution
   kGnssStale,  ///< /gps/status stopped arriving
@@ -104,6 +105,11 @@ enum class LocalizationFault : uint8_t
 
 struct LocalizationHealthCfg
 {
+  /// Require an RTK-Fixed solution instead of trusting the accuracy reported
+  /// for RTK-Float. Some receivers report an optimistic accuracy while Float,
+  /// so this is the conservative policy for GNSS-only operation.
+  bool require_rtk_fixed = false;
+
   /// GNSS horizontal accuracy that pauses mowing [m], and the tighter value
   /// that resumes it. Default 0.30/0.15 sits far above RTK-Fixed (~0.015 m)
   /// and ordinary RTK-Float, but well under the ~1.5 m plain-GPS fallback the
@@ -240,7 +246,14 @@ public:
     LocalizationFault pending = stale ? LocalizationFault::kGnssStale : LocalizationFault::kNone;
     if (!stale)
     {
-      if (has_acc)
+      if (cfg_.require_rtk_fixed)
+      {
+        gnss_bad = obs.rtk_mode != RtkMode::kFixed;
+        gnss_good = obs.rtk_mode == RtkMode::kFixed;
+        if (gnss_bad)
+          pending = LocalizationFault::kRtkNotFixed;
+      }
+      else if (has_acc)
       {
         gnss_bad = obs.gnss_accuracy_m > cfg_.gnss_acc_pause_m;
         gnss_good = obs.gnss_accuracy_m < cfg_.gnss_acc_resume_m;
@@ -311,6 +324,8 @@ inline const char* LocalizationFaultName(LocalizationFault fault)
 {
   switch (fault)
   {
+    case LocalizationFault::kRtkNotFixed:
+      return "RTK not fixed";
     case LocalizationFault::kGnssAccuracy:
       return "GNSS accuracy";
     case LocalizationFault::kGnssFixLost:

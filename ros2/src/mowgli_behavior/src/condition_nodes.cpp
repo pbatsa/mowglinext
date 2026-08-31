@@ -138,7 +138,16 @@ BT::NodeStatus NeedsDocking::tick()
     threshold = res.value();
   }
 
-  return ctx->battery_percent <= threshold ? BT::NodeStatus::SUCCESS : BT::NodeStatus::FAILURE;
+  double hold_sec = 10.0;
+  if (auto res = getInput<double>("hold_sec"))
+  {
+    hold_sec = res.value();
+  }
+
+  const bool sustained = low_battery_timer_.update(ctx->node->get_clock()->now().seconds(),
+                                                   ctx->battery_percent <= threshold,
+                                                   hold_sec);
+  return sustained ? BT::NodeStatus::SUCCESS : BT::NodeStatus::FAILURE;
 }
 
 // ---------------------------------------------------------------------------
@@ -259,6 +268,22 @@ BT::NodeStatus IsDocking::tick()
 {
   auto ctx = config().blackboard->get<std::shared_ptr<BTContext>>("context");
   return ctx->docking_active ? BT::NodeStatus::SUCCESS : BT::NodeStatus::FAILURE;
+}
+
+// ---------------------------------------------------------------------------
+// IsUndocking
+// ---------------------------------------------------------------------------
+
+BT::NodeStatus IsUndocking::tick()
+{
+  auto ctx = config().blackboard->get<std::shared_ptr<BTContext>>("context");
+  std::lock_guard<std::mutex> lock(ctx->context_mutex);
+  const std::string& state = ctx->last_high_level_status.state_name;
+  const bool undocking =
+      state == "UNDOCKING" || state == "RESUMING_UNDOCKING" || state == "RESUMING_AFTER_RAIN";
+  return ctx->current_command == 1 && ctx->has_high_level_status && undocking
+             ? BT::NodeStatus::SUCCESS
+             : BT::NodeStatus::FAILURE;
 }
 
 // ---------------------------------------------------------------------------

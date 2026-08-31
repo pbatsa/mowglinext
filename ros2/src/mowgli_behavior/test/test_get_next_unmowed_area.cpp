@@ -189,6 +189,15 @@ protected:
         "</BehaviorTree></root>";
     return factory.createTreeFromText(xml, blackboard);
   }
+
+  BT::Tree makePreservingEndSessionTree()
+  {
+    const std::string xml =
+        "<root BTCPP_format=\"4\"><BehaviorTree ID=\"MainTree\">"
+        "<EndSession preserve_coverage_resume=\"true\"/>"
+        "</BehaviorTree></root>";
+    return factory.createTreeFromText(xml, blackboard);
+  }
 };
 
 // ---------------------------------------------------------------------------
@@ -456,4 +465,26 @@ TEST_F(GetNextUnmowedAreaTest, EndSessionClearsSingleAreaMode)
   auto tree = makeTree(/*max_areas=*/5);
   EXPECT_EQ(tickToCompletion(tree), BT::NodeStatus::SUCCESS);
   EXPECT_EQ(ctx->current_area, 0);
+}
+
+TEST_F(GetNextUnmowedAreaTest, PreservingEndSessionKeepsCoverageCursorAndTarget)
+{
+  ctx->current_command = 1;
+  ctx->area_resume_pose_index[1] = 4242;
+  ctx->area_completed_swaths[1].insert(3);
+  ctx->completed_areas.insert(0);
+  ctx->single_area_target = 1;
+  ctx->target_area_index = 1;
+  ctx->attempted_areas.insert(2);
+
+  auto end_tree = makePreservingEndSessionTree();
+  ASSERT_EQ(end_tree.tickOnce(), BT::NodeStatus::SUCCESS);
+
+  EXPECT_EQ(ctx->area_resume_pose_index.at(1), 4242u);
+  EXPECT_EQ(ctx->area_completed_swaths.at(1).count(3), 1u);
+  EXPECT_EQ(ctx->completed_areas.count(0), 1u);
+  EXPECT_EQ(ctx->current_command, 0) << "failed docking must not auto-undock after restart";
+  ASSERT_TRUE(ctx->single_area_target.has_value());
+  EXPECT_EQ(*ctx->single_area_target, 1u);
+  EXPECT_TRUE(ctx->attempted_areas.empty()) << "retry bookkeeping is still transient";
 }

@@ -38,6 +38,7 @@
 using mowgli_behavior::batteryPercentFromVoltage;
 using mowgli_behavior::BatteryVoltageFilter;
 using mowgli_behavior::kBatteryFilterTauS;
+using mowgli_behavior::SustainedLowBattery;
 
 namespace
 {
@@ -107,6 +108,31 @@ TEST(BatteryFilter, GenuineDischargeStillReachesTheThreshold)
 
   feed(filter, 24.6f, t, 4.0 * kBatteryFilterTauS, kRobotPeriodS);
   EXPECT_LT(percentOf(filter), 20.0f);
+}
+
+TEST(SustainedLowBatteryTest, RequiresContinuousLowPeriod)
+{
+  SustainedLowBattery timer;
+  EXPECT_FALSE(timer.update(0.0, true, 10.0));
+  EXPECT_FALSE(timer.update(9.9, true, 10.0));
+  EXPECT_TRUE(timer.update(10.0, true, 10.0));
+}
+
+TEST(SustainedLowBatteryTest, RecoveryRestartsThePeriod)
+{
+  SustainedLowBattery timer;
+  EXPECT_FALSE(timer.update(0.0, true, 10.0));
+  EXPECT_FALSE(timer.update(8.0, false, 10.0));
+  EXPECT_FALSE(timer.update(12.0, true, 10.0));
+  EXPECT_FALSE(timer.update(21.9, true, 10.0));
+  EXPECT_TRUE(timer.update(22.0, true, 10.0));
+}
+
+TEST(SustainedLowBatteryTest, ZeroHoldActsImmediately)
+{
+  SustainedLowBattery timer;
+  EXPECT_TRUE(timer.update(0.0, true, 0.0));
+  EXPECT_FALSE(timer.update(0.1, false, 0.0));
 }
 
 // ── Rate independence ──────────────────────────────────────────────────────

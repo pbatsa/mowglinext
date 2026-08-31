@@ -126,6 +126,8 @@ public:
 /// resetting yaw_seeded_this_session there causes SeedYawFromMotion to re-fire
 /// the 1 m forward drive on the next ReactiveSequence re-tick of UndockOrSkip,
 /// even though the dock_yaw seed is already healthy.
+/// Set preserve_coverage_resume for failure/abort boundaries: transient attempt
+/// state is reset, but swath progress is retained for an operator-started retry.
 class EndSession : public BT::SyncActionNode
 {
 public:
@@ -136,7 +138,9 @@ public:
 
   static BT::PortsList providedPorts()
   {
-    return {};
+    return {BT::InputPort<bool>("preserve_coverage_resume",
+                                false,
+                                "Keep coverage cursor and persisted resume state")};
   }
 
   BT::NodeStatus tick() override;

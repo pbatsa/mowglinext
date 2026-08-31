@@ -18,6 +18,7 @@
 #include <string>
 
 #include "behaviortree_cpp/behavior_tree.h"
+#include "mowgli_behavior/battery_filter.hpp"
 #include "mowgli_behavior/bt_context.hpp"
 #include "mowgli_interfaces/srv/get_mowing_area.hpp"
 #include "rclcpp/rclcpp.hpp"
@@ -127,10 +128,12 @@ public:
 // NeedsDocking
 // ---------------------------------------------------------------------------
 
-/// Returns SUCCESS when battery_percent is at or below the docking threshold.
+/// Returns SUCCESS after battery_percent remains at or below the docking
+/// threshold for hold_sec. Brief motor-load sag resets without docking.
 ///
 /// Input ports:
 ///   threshold (float, default "20.0") – return-to-dock battery level in percent.
+///   hold_sec (double, default "10.0") – continuous-low duration required.
 class NeedsDocking : public BT::ConditionNode
 {
 public:
@@ -141,10 +144,16 @@ public:
 
   static BT::PortsList providedPorts()
   {
-    return {BT::InputPort<float>("threshold", 20.0f, "Docking threshold in percent")};
+    return {
+        BT::InputPort<float>("threshold", 20.0f, "Docking threshold in percent"),
+        BT::InputPort<double>("hold_sec", 10.0, "Continuous low-battery duration required"),
+    };
   }
 
   BT::NodeStatus tick() override;
+
+private:
+  SustainedLowBattery low_battery_timer_;
 };
 
 // ---------------------------------------------------------------------------
@@ -350,6 +359,29 @@ class IsDocking : public BT::ConditionNode
 {
 public:
   IsDocking(const std::string& name, const BT::NodeConfig& config) : BT::ConditionNode(name, config)
+  {
+  }
+
+  static BT::PortsList providedPorts()
+  {
+    return {};
+  }
+
+  BT::NodeStatus tick() override;
+};
+
+// ---------------------------------------------------------------------------
+// IsUndocking
+// ---------------------------------------------------------------------------
+
+/// Returns SUCCESS while the tree's published high-level state identifies an
+/// intentional undock or resume-undock. This narrow exemption lets that
+/// bounded motion finish before the strict RTK guard holds localization.
+class IsUndocking : public BT::ConditionNode
+{
+public:
+  IsUndocking(const std::string& name, const BT::NodeConfig& config)
+      : BT::ConditionNode(name, config)
   {
   }
 

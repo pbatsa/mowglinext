@@ -251,11 +251,11 @@
            loc_sigma_resume_m). Field incident 2026-08-02: RTK fell back
            to plain GPS (σ ≈ 1.5 m) for >60 s and FTC kept steering on the
            drifting estimate until the robot physically left the area and
-           BoundaryGuard tripped. Exemptions mirror BoundaryGuard: on the
-           charger the pose is gauge-pinned; manual/recording modes are
-           operator-supervised; HOME + the blade-off dock transit must not
-           be stranded mid-return by a GPS outage (docking itself is
-           charger-detection based).
+           BoundaryGuard tripped. On this GNSS-only field configuration,
+           RTK-Float is also considered degraded after the persistence delay.
+           Manual/recording modes remain operator-supervised. The bounded
+           reverse away from the dock is allowed to finish before the hold;
+           all autonomous transit, mowing, and return-home motion is guarded.
            ================================================================ -->
       <ReactiveFallback name="LocalizationGuard">
         <IsCharging/>
@@ -263,14 +263,10 @@
         <IsCommand command="3"/>
         <IsCommand command="5"/>
         <IsCommand command="6"/>
-        <IsCommand command="2"/>
-        <Sequence name="LocDockTransitExempt">
-          <IsCommand command="1"/>
-          <IsDocking/>
-        </Sequence>
+        <IsUndocking/>
         <Inverter><IsLocalizationDegraded/></Inverter>
 
-        <!-- Hold in place until σ recovers: blade off, wheels stopped.
+        <!-- Hold in place until RTK/position health recovers: blade off, wheels stopped.
              The ReactiveFallback re-evaluates IsLocalizationDegraded every
              tick, so the guard releases within one tick of the hysteresis
              clearing and the resume-cursor machinery continues the strip. -->
@@ -405,7 +401,7 @@
                  in a settled state instead of a frozen one. -->
             <Sequence name="CriticalChargerFailed">
               <PublishHighLevelStatus state="1" state_name="CHARGER_FAILED"/>
-              <EndSession/>
+              <EndSession preserve_coverage_resume="true"/>
               <ClearCommand/>
               <AlwaysFailure/>
             </Sequence>
@@ -635,7 +631,7 @@
 
               <!-- Reactive battery check -->
               <Fallback name="BatteryGuard">
-                <Inverter><NeedsDocking threshold="{battery_low_pct}"/></Inverter>
+                <Inverter><NeedsDocking threshold="{battery_low_pct}" hold_sec="{battery_low_persist_s}"/></Inverter>
                 <Sequence name="BatteryDockAndResume">
                   <SetMowerEnabled enabled="false"/>
                   <StopMoving/>
@@ -897,7 +893,7 @@
                   </Sequence>
                 </Fallback>
                 <PublishHighLevelStatus state="1" state_name="IDLE_DOCKED"/>
-                <EndSession/>
+                <EndSession preserve_coverage_resume="true"/>
                 <ClearCommand/>
               </Sequence>
             </Fallback>
@@ -990,7 +986,7 @@
               </Sequence>
             </ReactiveFallback>
             <PublishHighLevelStatus state="1" state_name="IDLE_DOCKED"/>
-            <EndSession/>
+            <EndSession preserve_coverage_resume="true"/>
             <ClearCommand/>
           </Sequence>
         </ReactiveSequence>

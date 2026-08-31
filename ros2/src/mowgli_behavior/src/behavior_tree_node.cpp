@@ -283,6 +283,7 @@ private:
     // (default 5 m), which no pivot can reach — that covers the localizer
     // rejecting every fix while the receiver stays healthy.
     LocalizationHealthCfg loc_cfg;
+    loc_cfg.require_rtk_fixed = declare_parameter<bool>("loc_require_rtk_fixed", false);
     loc_cfg.gnss_acc_pause_m = declare_parameter<double>("loc_gnss_acc_pause_m", 0.30);
     loc_cfg.gnss_acc_resume_m = declare_parameter<double>("loc_gnss_acc_resume_m", 0.15);
     loc_cfg.gnss_stale_s = declare_parameter<double>("loc_gnss_stale_s", 5.0);
@@ -911,6 +912,7 @@ private:
     // BatterySection. Pushed onto the blackboard so the BT XML can pull
     // them with {key} substitution instead of carrying hardcoded values.
     const double battery_low_pct = declare_parameter<double>("battery_low_percent", 20.0);
+    const double battery_low_persist_s = declare_parameter<double>("battery_low_persist_s", 10.0);
     const double battery_critical_pct = declare_parameter<double>("battery_critical_percent", 10.0);
     const double battery_full_pct = declare_parameter<double>("battery_full_percent", 95.0);
     const double battery_critical_voltage =
@@ -933,6 +935,7 @@ private:
                   battery_critical_recovery_pct);
     }
     blackboard_->set("battery_low_pct", static_cast<float>(battery_low_pct));
+    blackboard_->set("battery_low_persist_s", battery_low_persist_s);
     blackboard_->set("battery_critical_pct", static_cast<float>(battery_critical_pct));
     blackboard_->set("battery_full_pct", static_cast<float>(battery_full_pct));
     blackboard_->set("battery_critical_voltage", static_cast<float>(battery_critical_voltage));

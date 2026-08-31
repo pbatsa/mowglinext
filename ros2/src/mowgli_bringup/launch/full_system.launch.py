@@ -267,6 +267,7 @@ def generate_launch_description() -> LaunchDescription:
             # nothing to act on. The guard keys on GNSS solution quality from
             # /gps/status — see mowgli_behavior/localization_health.hpp for why
             # the fused covariance is the wrong signal.
+            {"loc_require_rtk_fixed": bool(robot_params.get("loc_require_rtk_fixed", False))},
             {"loc_gnss_acc_pause_m": float(robot_params.get("loc_gnss_acc_pause_m", 0.30))},
             {"loc_gnss_acc_resume_m": float(robot_params.get("loc_gnss_acc_resume_m", 0.15))},
             {"loc_gnss_stale_s": float(robot_params.get("loc_gnss_stale_s", 5.0))},
@@ -341,6 +342,7 @@ def generate_launch_description() -> LaunchDescription:
             {"battery_empty_voltage": float(robot_params.get("battery_empty_voltage", 24.0))},
             {"battery_critical_voltage": float(robot_params.get("battery_critical_voltage", 0.0))},
             {"battery_low_percent": float(robot_params.get("battery_low_percent", 20.0))},
+            {"battery_low_persist_s": float(robot_params.get("battery_low_persist_s", 10.0))},
             {"battery_critical_percent": float(robot_params.get("battery_critical_percent", 10.0))},
             {"battery_full_percent": float(robot_params.get("battery_full_percent", 95.0))},
             {

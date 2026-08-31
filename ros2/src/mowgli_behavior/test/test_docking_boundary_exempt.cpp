@@ -45,6 +45,7 @@ using mowgli_behavior::BTContext;
 using mowgli_behavior::IsBoundaryViolation;
 using mowgli_behavior::IsCommand;
 using mowgli_behavior::IsDocking;
+using mowgli_behavior::IsUndocking;
 
 // ---------------------------------------------------------------------------
 // Global ROS2 init/shutdown
@@ -125,6 +126,57 @@ TEST_F(IsDockingTest, NoSideEffectsOnContext)
   EXPECT_EQ(tick(), BT::NodeStatus::SUCCESS);
   // Pure read — the flag is owned by DockRobot, never mutated by IsDocking.
   EXPECT_TRUE(ctx->docking_active);
+}
+
+// ---------------------------------------------------------------------------
+// IsUndocking condition — the strict localization guard's bounded-motion
+// exemption is based on the tree-owned high-level state.
+// ---------------------------------------------------------------------------
+
+class IsUndockingTest : public ::testing::Test
+{
+protected:
+  std::shared_ptr<BTContext> ctx;
+  BT::Blackboard::Ptr blackboard;
+  BT::BehaviorTreeFactory factory;
+  BT::Tree tree;
+
+  void SetUp() override
+  {
+    ctx = std::make_shared<BTContext>();
+    ctx->node = rclcpp::Node::make_shared("test_is_undocking");
+    blackboard = BT::Blackboard::create();
+    blackboard->set("context", ctx);
+    factory.registerNodeType<IsUndocking>("IsUndocking");
+    tree = factory.createTreeFromText(
+        "<root BTCPP_format=\"4\"><BehaviorTree ID=\"MainTree\">"
+        "<IsUndocking/>"
+        "</BehaviorTree></root>",
+        blackboard);
+  }
+};
+
+TEST_F(IsUndockingTest, AllowsInitialAndResumeUndockStates)
+{
+  ctx->current_command = 1;
+  ctx->has_high_level_status = true;
+  for (const char* state : {"UNDOCKING", "RESUMING_UNDOCKING", "RESUMING_AFTER_RAIN"})
+  {
+    ctx->last_high_level_status.state_name = state;
+    EXPECT_EQ(tree.tickOnce(), BT::NodeStatus::SUCCESS) << state;
+  }
+}
+
+TEST_F(IsUndockingTest, DoesNotExemptTransitOrOtherCommands)
+{
+  ctx->has_high_level_status = true;
+  ctx->current_command = 1;
+  ctx->last_high_level_status.state_name = "TRANSIT";
+  EXPECT_EQ(tree.tickOnce(), BT::NodeStatus::FAILURE);
+
+  ctx->current_command = 2;
+  ctx->last_high_level_status.state_name = "UNDOCKING";
+  EXPECT_EQ(tree.tickOnce(), BT::NodeStatus::FAILURE);
 }
 
 // ---------------------------------------------------------------------------
